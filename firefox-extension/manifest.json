@@ -2,6 +2,12 @@
   "manifest_version": 2,
   "name": "Tether",
   "version": "1.0.0",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tether@simonreid.space",
+      "strict_min_version": "109.0"
+    }
+  },
   "description": "Save links to your self-hosted Tether instance with tags.",
   "icons": {
     "48": "icons/icon-48.svg",
