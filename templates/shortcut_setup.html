@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tether — Shortcut Setup</title>
+  <style>
+    :root {
+      --accent:  #6366f1;
+      --bg:      #0f0f12;
+      --surface: #1a1a22;
+      --surface2:#22222e;
+      --border:  #2a2a38;
+      --text:    #e8e8f0;
+      --subtext: #888899;
+      --radius:  12px;
+    }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 2rem 1rem 4rem;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      font-size: 1.4rem;
+      font-weight: 700;
+      color: var(--accent);
+      margin-bottom: 2.5rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.75rem;
+      width: 100%;
+      max-width: 520px;
+      margin-bottom: 1rem;
+    }
+    h1 { font-size: 1.3rem; margin-bottom: 0.35rem; }
+    h2 { font-size: 1rem; font-weight: 600; margin-bottom: 1rem; }
+    .lead { color: var(--subtext); font-size: 0.9rem; line-height: 1.6; margin-bottom: 0; }
+    hr { border: none; border-top: 1px solid var(--border); margin: 1.25rem 0; }
+
+    /* top value boxes (server URL + UUID) */
+    .value-box {
+      display: flex;
+      align-items: center;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.6rem 0.85rem;
+      gap: 0.6rem;
+      margin: 0.5rem 0 0.25rem;
+    }
+    .value-box code {
+      flex: 1;
+      font-size: 0.82rem;
+      word-break: break-all;
+      color: var(--accent);
+    }
+    .value-label { font-size: 0.78rem; color: var(--subtext); margin-bottom: 0.15rem; }
+
+    /* inline copy chip — used inside action blocks */
+    .cc {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.3rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 0.3em 0.2em 0.3em 0.6em;
+      vertical-align: middle;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .cc code {
+      font-size: 0.85em;
+      color: var(--accent);
+      word-break: break-all;
+      min-width: 0;
+    }
+    .cc button {
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      border: none;
+      color: var(--accent);
+      cursor: pointer;
+      /* 44×44pt minimum touch target (Apple HIG) */
+      min-width: 44px;
+      min-height: 44px;
+      border-radius: 5px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+      transition: background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .cc button:hover, .cc button:active { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+
+    /* generic copy button (used in value-box) */
+    .copy-btn {
+      background: color-mix(in srgb, var(--accent) 12%, transparent);
+      border: none;
+      color: var(--accent);
+      cursor: pointer;
+      min-width: 44px;
+      min-height: 44px;
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      transition: background 0.15s;
+      -webkit-tap-highlight-color: transparent;
+    }
+    .copy-btn:hover, .copy-btn:active { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+
+    /* steps */
+    .steps { display: flex; flex-direction: column; gap: 1.25rem; }
+    .step { display: flex; gap: 1rem; align-items: flex-start; }
+    .step-num {
+      background: var(--accent);
+      color: #fff;
+      border-radius: 50%;
+      width: 26px;
+      height: 26px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.78rem;
+      font-weight: 700;
+      margin-top: 1px;
+    }
+    .step-body { flex: 1; min-width: 0; }
+    .step-body strong { display: block; font-size: 0.925rem; margin-bottom: 0.3rem; }
+    .step-body p { color: var(--subtext); font-size: 0.855rem; line-height: 1.6; }
+    .action-name {
+      display: inline-block;
+      background: color-mix(in srgb, var(--accent) 15%, transparent);
+      color: var(--accent);
+      border-radius: 5px;
+      padding: 0.1em 0.45em;
+      font-size: 0.82em;
+      font-weight: 600;
+    }
+    .ui-text {
+      display: inline-block;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 0.1em 0.45em;
+      font-size: 0.82em;
+    }
+
+    /* action block — structured rows */
+    .action-block {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.65rem 0.85rem;
+      margin-top: 0.6rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+    }
+    .ab-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.82rem;
+      flex-wrap: wrap;
+    }
+    .ab-label {
+      color: var(--text);
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .ab-value { color: var(--subtext); }
+    .ab-indent { padding-left: 1rem; }
+    .ab-sep { border-top: 1px solid var(--border); margin: 0.1rem 0; }
+
+    /* toast */
+    .toast {
+      position: fixed;
+      bottom: 1.5rem;
+      right: 1.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.65rem 1rem;
+      font-size: 0.85rem;
+      box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+      animation: slide-in 0.2s ease;
+      z-index: 999;
+    }
+    @keyframes slide-in {
+      from { transform: translateY(8px); opacity: 0; }
+      to   { transform: translateY(0);   opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+  <a href="/" style="align-self:flex-start;display:flex;align-items:center;gap:0.4rem;color:var(--subtext);font-size:0.85rem;text-decoration:none;margin-bottom:1rem">
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="15 18 9 12 15 6"/></svg>
+    Back to Tether
+  </a>
+  <div class="logo">
+    <svg width="28" height="28" viewBox="0 0 28 28" fill="none">
+      <circle cx="14" cy="14" r="13" stroke="#6366f1" stroke-width="2"/>
+      <path d="M9 14 C9 10 19 10 19 14 C19 18 9 18 9 14" stroke="#6366f1" stroke-width="2" fill="none"/>
+      <circle cx="14" cy="14" r="2.5" fill="#6366f1"/>
+    </svg>
+    Tether
+  </div>
+
+  <!-- Server details -->
+  <div class="card">
+    <h1>iOS Shortcut Setup</h1>
+    <p class="lead">Build the Tether shortcut manually in the Shortcuts app. Your server details are pre-filled below — tap any copy button to grab the value.</p>
+    <hr>
+    <h2>Your server details</h2>
+
+    <p class="value-label">Server URL</p>
+    <div class="value-box">
+      <code id="val-url">http://{{ local_ip }}:{{ port }}</code>
+      <button class="copy-btn" onclick="copyId('val-url')" title="Copy">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+    </div>
+
+    <p class="value-label" style="margin-top:0.75rem">API key (UUID)</p>
+    <div class="value-box">
+      <code id="val-uuid">{{ api_uuid }}</code>
+      <button class="copy-btn" onclick="copyId('val-uuid')" title="Copy">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <!-- AI prompt -->
+  <div class="card">
+    <h2>Option A — Generate with AI <span style="font-size:0.75rem;font-weight:400;color:var(--subtext)">(iOS 18+)</span></h2>
+    <p style="margin-bottom:0.75rem">In the Shortcuts app tap <span class="ui-text">+</span> → <span class="ui-text">New Shortcut</span>, then tap the <b>sparkle / wand icon</b> to open the AI prompt. Copy the prompt below and paste it in.</p>
+    <div class="value-box" style="flex-direction:column;align-items:flex-start;gap:0.6rem">
+      <code id="ai-prompt" style="white-space:pre-wrap;line-height:1.6;font-size:0.8rem;color:var(--text)">Create a shortcut that appears in the Share Sheet and accepts any input. Make sure "Use as Quick Action" and "Show in Share Sheet" are enabled in the shortcut settings.
+
+Step 1: Get URLs from the shared input.
+
+Step 2: Make a GET request to http://{{ local_ip }}:{{ port }}/api/tags?shortcut=true with the HTTP header X-Tether-UUID set to {{ api_uuid }}.
+
+Step 3: Repeat with each item in the result. Inside the loop, get the dictionary from each repeat item, then get the value for the key "name" from that dictionary. End the repeat.
+
+Step 4: Show a Choose from List using the Repeat Results. Allow selecting multiple items.
+
+Step 5: If the Chosen Items contains "+ New", ask for input with the prompt "New categories (comma-separated)". Otherwise set a variable called New Categories to an empty string. End the if.
+
+Step 6: Make a POST request to http://{{ local_ip }}:{{ port }}/api/links with headers X-Tether-UUID set to {{ api_uuid }} and Content-Type set to application/json. Set the JSON body with key "url" as a Text field set to the URLs magic variable from step 1, key "tags" as a List field set to the Chosen Item magic variable from step 4, and key "new_tags" as a Text field set to the Provided Input magic variable from step 5. Do NOT use "Ask Each Time" for any of these fields — use magic variables only.
+
+Step 7: Show a notification with the title "Tethered!"</code>
+      <button class="copy-btn" style="align-self:flex-end;min-width:unset;padding:0.4rem 0.75rem;gap:0.4rem;font-size:0.82rem;border-radius:7px" onclick="copyId('ai-prompt')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        Copy prompt
+      </button>
+    </div>
+    <p style="margin-top:0.75rem;font-size:0.8rem;color:var(--subtext)">The AI may not get every detail right — check the actions it generates against the manual steps below and adjust where needed.</p>
+  </div>
+
+  <!-- Steps -->
+  <div class="card">
+    <h2>Option B — Manual setup</h2>
+    <div class="steps">
+
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <strong>Open the Shortcuts app and create a new shortcut</strong>
+          <p>Tap <span class="ui-text">+</span> in the top-right corner, then tap <span class="ui-text">Add Action</span>.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <strong>Add: <span class="action-name">Receive Input from Share Sheet</span></strong>
+          <p>Search for <span class="ui-text">Receive Input</span>. Leave the input type as <b>Any</b>. This lets the shortcut accept links from any app, including TikTok and YouTube which share as text rather than URLs.</p>
+        </div>
+      </div>
+
+      <div class="step" style="background:color-mix(in srgb,var(--accent) 8%,transparent);border-radius:8px;padding:0.75rem;margin-bottom:0.25rem">
+        <div class="step-num" style="background:#f59e0b">!</div>
+        <div class="step-body">
+          <strong>Enable "Show in Share Sheet" — do this before building</strong>
+          <p>Tap the shortcut name at the top to open its settings, then tap <span class="ui-text">Add to Share Sheet</span> (or toggle <span class="ui-text">Show in Share Sheet</span>). <b>Without this the shortcut will never appear when you tap Share in other apps.</b> You can do it now or after step 15 — just don't skip it.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <strong>Add: <span class="action-name">Get URLs from Input</span></strong>
+          <p>Search for <span class="ui-text">Get URLs from Input</span>. This extracts a clean URL from whatever was shared — even if the app passed it as text. The input should be <b>Shortcut Input</b> from step 2.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <strong>Add: <span class="action-name">Get Contents of URL</span> — fetch your tags</strong>
+          <p>Search for <span class="ui-text">Get Contents of URL</span>. Tap <b>Show More</b> to expand it, then fill in:</p>
+          <div class="action-block">
+            <div class="ab-row">
+              <span class="ab-label">URL</span>
+              <span class="cc"><code>http://{{ local_ip }}:{{ port }}/api/tags?shortcut=true</code><button onclick="copyText('http://{{ local_ip }}:{{ port }}/api/tags?shortcut=true')" title="Copy">&#x2398;</button></span>
+            </div>
+            <div class="ab-row">
+              <span class="ab-label">Method</span>
+              <span class="ab-value">GET</span>
+            </div>
+            <div class="ab-sep"></div>
+            <div class="ab-row">
+              <span class="ab-label">Headers</span>
+              <span class="ab-value">tap <b>Add new header</b></span>
+            </div>
+            <div class="ab-row ab-indent">
+              <span class="ab-label">Key</span>
+              <span class="cc"><code>X-Tether-UUID</code><button onclick="copyText('X-Tether-UUID')" title="Copy">&#x2398;</button></span>
+            </div>
+            <div class="ab-row ab-indent">
+              <span class="ab-label">Value</span>
+              <span class="cc"><code>{{ api_uuid }}</code><button onclick="copyText('{{ api_uuid }}')" title="Copy">&#x2398;</button></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <strong>Add: <span class="action-name">Repeat with Each</span></strong>
+          <p>Search for <span class="ui-text">Repeat with Each</span>. The input should automatically be the <b>Contents of URL</b> result from step 4. The loop runs once per tag object.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">6</div>
+        <div class="step-body">
+          <strong>Inside the loop: add <span class="action-name">Get Dictionary from Input</span></strong>
+          <p>Search for <span class="ui-text">Get Dictionary from Input</span>. Set the input to <b>Repeat Item</b>. This converts each raw JSON item into a proper Dictionary that the next step can read.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">7</div>
+        <div class="step-body">
+          <strong>Still inside the loop: add <span class="action-name">Get Dictionary Value</span></strong>
+          <p>Search for <span class="ui-text">Get Dictionary Value</span>. Configure it as:</p>
+          <div class="action-block">
+            <div class="ab-row">
+              <span class="ab-label">Get</span>
+              <span class="ab-value">Value</span>
+            </div>
+            <div class="ab-row">
+              <span class="ab-label">for key</span>
+              <span class="cc"><code>name</code><button onclick="copyText('name')" title="Copy">&#x2398;</button></span>
+            </div>
+            <div class="ab-row">
+              <span class="ab-label">in</span>
+              <span class="ab-value"><b>Dictionary</b> (the result of step 6)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">8</div>
+        <div class="step-body">
+          <strong>Add: <span class="action-name">End Repeat</span></strong>
+
+          <p>Tap <span class="ui-text">End Repeat</span> to close the loop. Shortcuts collects all the names into a <b>Repeat Results</b> variable automatically.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">9</div>
+        <div class="step-body">
+          <strong>Add: <span class="action-name">Choose from List</span></strong>
+          <p>Search for <span class="ui-text">Choose from List</span>. Set the input to <b>Repeat Results</b>. Tap the action and enable <b>Select Multiple</b> so you can pick more than one tag.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">10</div>
+        <div class="step-body">
+          <strong>Add: <span class="action-name">If</span> — check for new category</strong>
+          <p>Search for <span class="ui-text">If</span>. Configure it as:</p>
+          <div class="action-block">
+            <div class="ab-row">
+              <span class="ab-label">Input</span>
+              <span class="ab-value"><b>Chosen Item</b> (result of step 9)</span>
+            </div>
+            <div class="ab-row">
+              <span class="ab-label">Condition</span>
+              <span class="ab-value">contains</span>
+            </div>
+            <div class="ab-row">
+              <span class="ab-label">Value</span>
+              <span class="cc"><code>+ New</code><button onclick="copyText('+ New')" title="Copy">&#x2398;</button></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">11</div>
+        <div class="step-body">
+          <strong>Inside the If: add <span class="action-name">Ask for Input</span></strong>
+          <p>Search for <span class="ui-text">Ask for Input</span>. Set it up as:</p>
+          <div class="action-block">
+            <div class="ab-row">
+              <span class="ab-label">Prompt</span>
+              <span class="cc"><code>New categories (comma-separated)</code><button onclick="copyText('New categories (comma-separated)')" title="Copy">&#x2398;</button></span>
+            </div>
+            <div class="ab-row">
+              <span class="ab-label">Input Type</span>
+              <span class="ab-value">Text</span>
+            </div>
+          </div>
+          <p style="margin-top:0.5rem">The result will be the <b>Provided Input</b> variable — this holds whatever the user types.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">12</div>
+        <div class="step-body">
+          <strong>Add: <span class="action-name">End If</span></strong>
+          <p>Tap <span class="ui-text">End If</span> to close the condition. Leave the <b>Otherwise</b> branch empty — if "+ New" wasn't chosen, <b>Provided Input</b> will simply be blank and no new categories will be created.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">13</div>
+        <div class="step-body">
+          <strong>Add: <span class="action-name">Get Contents of URL</span> — save the link</strong>
+          <p>Add a second <span class="ui-text">Get Contents of URL</span> action. Tap <b>Show More</b> and fill in:</p>
+          <div class="action-block">
+            <div class="ab-row">
+              <span class="ab-label">URL</span>
+              <span class="cc"><code>http://{{ local_ip }}:{{ port }}/api/links</code><button onclick="copyText('http://{{ local_ip }}:{{ port }}/api/links')" title="Copy">&#x2398;</button></span>
+            </div>
+            <div class="ab-row">
+              <span class="ab-label">Method</span>
+              <span class="ab-value">POST</span>
+            </div>
+            <div class="ab-sep"></div>
+            <div class="ab-row">
+              <span class="ab-label">Headers</span>
+              <span class="ab-value">tap <b>Add new header</b> twice</span>
+            </div>
+            <div class="ab-row ab-indent">
+              <span class="ab-label">Key</span>
+              <span class="cc"><code>X-Tether-UUID</code><button onclick="copyText('X-Tether-UUID')" title="Copy">&#x2398;</button></span>
+              <span class="ab-value">→ Value</span>
+              <span class="cc"><code>{{ api_uuid }}</code><button onclick="copyText('{{ api_uuid }}')" title="Copy">&#x2398;</button></span>
+            </div>
+            <div class="ab-row ab-indent">
+              <span class="ab-label">Key</span>
+              <span class="cc"><code>Content-Type</code><button onclick="copyText('Content-Type')" title="Copy">&#x2398;</button></span>
+              <span class="ab-value">→ Value</span>
+              <span class="cc"><code>application/json</code><button onclick="copyText('application/json')" title="Copy">&#x2398;</button></span>
+            </div>
+            <div class="ab-sep"></div>
+            <div class="ab-row">
+              <span class="ab-label">Request Body</span>
+              <span class="ab-value">JSON (already selected)</span>
+            </div>
+            <div class="ab-row ab-indent">
+              <span class="ab-value">Tap <b>Add new field</b> → choose <b>Text</b></span>
+            </div>
+            <div class="ab-row ab-indent">
+              <span class="ab-label">Key</span>
+              <span class="cc"><code>url</code><button onclick="copyText('url')" title="Copy">&#x2398;</button></span>
+              <span class="ab-value">→ Value: tap the field, choose <b>URLs</b> magic variable (from step 3)</span>
+            </div>
+            <div class="ab-row ab-indent">
+              <span class="ab-value">Tap <b>Add new field</b> → choose <b>List</b></span>
+            </div>
+            <div class="ab-row ab-indent">
+              <span class="ab-label">Key</span>
+              <span class="cc"><code>tags</code><button onclick="copyText('tags')" title="Copy">&#x2398;</button></span>
+              <span class="ab-value">→ Value: tap the field, choose <b>Chosen Item</b> magic variable (from step 9)</span>
+            </div>
+            <div class="ab-row ab-indent">
+              <span class="ab-value">Tap <b>Add new field</b> → choose <b>Text</b></span>
+            </div>
+            <div class="ab-row ab-indent">
+              <span class="ab-label">Key</span>
+              <span class="cc"><code>new_tags</code><button onclick="copyText('new_tags')" title="Copy">&#x2398;</button></span>
+              <span class="ab-value">→ Value: tap the field, choose <b>Provided Input</b> magic variable (from step 11)</span>
+            </div>
+          </div>
+          <p style="margin-top:0.6rem;font-size:0.82rem;color:#f59e0b">⚠️ For each value field, tap it and pick the magic variable from the list — do <b>not</b> choose "Ask Each Time". If you see a dialog asking for URL, tags, and new_tags when the shortcut runs, open this action and change those fields to magic variables.</p>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">14</div>
+        <div class="step-body">
+          <strong>Add: <span class="action-name">Show Notification</span></strong>
+          <p>Search for <span class="ui-text">Show Notification</span>. Set the title to:</p>
+          <div class="action-block">
+            <div class="ab-row">
+              <span class="ab-label">Title</span>
+              <span class="cc"><code>Tethered!</code><button onclick="copyText('Tethered!')" title="Copy">&#x2398;</button></span>
+            </div>
+            <div class="ab-row">
+              <span class="ab-label">Body</span>
+              <span class="ab-value">magic variable → <b>URLs</b> (optional)</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">15</div>
+        <div class="step-body">
+          <strong>Name and save</strong>
+          <p>Tap the shortcut name at the top and rename it to
+            <span class="cc" style="display:inline-flex"><code>Tether</code><button onclick="copyText('Tether')" title="Copy">&#x2398;</button></span>.
+            Tap <span class="ui-text">Done</span>. It will now appear in your Share Sheet.
+          </p>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Usage -->
+  <div class="card">
+    <h2>How to use it</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body"><strong>Open any page you want to save</strong><p>Works in Safari, YouTube, Reddit — anywhere with a Share button.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body"><strong>Tap Share → Tether</strong><p>Scroll down in the Share Sheet until you see Tether.</p></div>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body"><strong>Pick your tags and you're done</strong><p>Your phone must be on the same Wi-Fi network as the server.</p></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const COPY_SVG = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>`;
+
+    // Replace placeholder characters with real SVG icons
+    document.querySelectorAll('.cc button, .copy-btn').forEach(btn => {
+      btn.innerHTML = COPY_SVG;
+    });
+
+    function showToast(msg) {
+      // remove any existing toast first
+      document.querySelectorAll('.toast').forEach(t => t.remove());
+      const el = document.createElement("div");
+      el.className = "toast";
+      el.textContent = msg || "Copied!";
+      document.body.appendChild(el);
+      setTimeout(() => el.remove(), 2200);
+    }
+
+    function copyText(text) {
+      // navigator.clipboard requires HTTPS; use execCommand fallback for local HTTP
+      if (navigator.clipboard && window.isSecureContext) {
+        navigator.clipboard.writeText(text).then(() => showToast()).catch(() => execCopy(text));
+      } else {
+        execCopy(text);
+      }
+    }
+
+    function execCopy(text) {
+      const el = document.createElement("textarea");
+      el.value = text;
+      // keep it visible so iOS will let us select it, but off-screen
+      el.style.cssText = "position:fixed;top:0;left:0;width:2em;height:2em;opacity:0;font-size:16px;";
+      document.body.appendChild(el);
+      el.focus();
+      el.setSelectionRange(0, text.length);
+      try {
+        const ok = document.execCommand("copy");
+        showToast(ok ? "Copied!" : "Long-press to copy");
+      } catch {
+        showToast("Long-press to copy");
+      }
+      document.body.removeChild(el);
+    }
+
+    function copyId(id) {
+      copyText(document.getElementById(id).textContent.trim());
+    }
+  </script>
+</body>
+</html>

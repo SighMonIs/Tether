@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Tether{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css?v=029">
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+  <meta name="tether-uuid" content="{{ tether_uuid | default('') }}">
+</head>
+<body>
+  <nav class="sidebar">
+    <div class="sidebar-logo">
+      <svg width="26" height="26" viewBox="0 0 28 28" fill="none">
+        <circle cx="14" cy="14" r="13" stroke="var(--accent)" stroke-width="2"/>
+        <path d="M9 14 C9 10 19 10 19 14 C19 18 9 18 9 14" stroke="var(--accent)" stroke-width="2" fill="none"/>
+        <circle cx="14" cy="14" r="2.5" fill="var(--accent)"/>
+      </svg>
+      <span>Tether</span>
+      <button class="sidebar-add-btn" onclick="openAddLink()" title="Add link">
+        <i data-lucide="plus"></i>
+      </button>
+    </div>
+
+    <ul class="nav-links">
+      <li><a href="/" class="nav-link {% if request.url.path == '/' and not request.query_params.get('tag') and not request.query_params.get('uncategorised') and not request.query_params.get('favourites') %}active{% endif %}">
+        <i data-lucide="home"></i>
+        Home
+      </a></li>
+    </ul>
+
+    <div class="sidebar-section-header">
+      <span class="sidebar-section-label">Tags</span>
+      <a href="/categories" class="sidebar-section-btn {% if request.url.path == '/categories' %}active{% endif %}" title="Manage tags">
+        <i data-lucide="ellipsis"></i>
+      </a>
+    </div>
+    <ul class="sidebar-cats">
+      <li id="sidebar-favourites-item">
+        <a href="/?favourites=true" id="sidebar-favourites-link"
+           class="sidebar-cat-link {% if request.query_params.get('favourites') %}active{% endif %}">
+          <i data-lucide="star" class="sidebar-cat-star"></i>
+          <span class="sidebar-cat-name">Favourites</span>
+          <span class="sidebar-cat-badge" id="sidebar-fav-badge" style="display:none"></span>
+        </a>
+      </li>
+    </ul>
+    <ul class="sidebar-cats" id="sidebar-cats"></ul>
+
+    <div class="sidebar-footer">
+      <a href="/settings" class="nav-link {% if request.url.path == '/settings' %}active{% endif %}">
+        <i data-lucide="settings"></i>
+        Settings
+      </a>
+      <span class="sidebar-version">v0.1.9</span>
+    </div>
+  </nav>
+
+  <dialog id="add-link-modal" class="modal">
+    <div class="modal-content">
+      <div class="modal-tabs">
+        <button class="modal-tab active" onclick="switchAddTab('single')">Add Link</button>
+        <button class="modal-tab" onclick="switchAddTab('import')">Import Links</button>
+      </div>
+
+      <!-- Single link tab -->
+      <form id="add-link-form" onsubmit="submitAddLink(event)">
+        <div class="form-group">
+          <label for="add-link-url">URL</label>
+          <input type="url" id="add-link-url" placeholder="https://…" required autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>Tags</label>
+          <div id="add-link-tag-list" class="edit-tag-list"></div>
+          <select id="add-link-tag-select" class="edit-tag-select" onchange="handleAddLinkTagSelect(this)">
+            <option value="">— Add tag —</option>
+            <option value="__new__">＋ Add new tag</option>
+          </select>
+          <div id="add-link-new-tag-row" class="edit-tag-add" style="display:none">
+            <input type="text" id="add-link-new-tag" placeholder="New tags, comma-separated" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewLinkTags();}">
+            <button type="button" onclick="addNewLinkTags()">Add</button>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" onclick="document.getElementById('add-link-modal').close()">Cancel</button>
+          <button type="submit" class="btn-primary">Save</button>
+        </div>
+      </form>
+
+      <!-- Import tab -->
+      <form id="import-links-form" onsubmit="submitImportLinks(event)" style="display:none">
+        <div class="form-group">
+          <label for="import-links-text">Links</label>
+          <textarea id="import-links-text" class="import-textarea" placeholder="Paste links here, one per line or separated by commas…" rows="6"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Tags</label>
+          <p class="form-note">These tags will be applied to all imported links.</p>
+          <div id="import-tag-list" class="edit-tag-list"></div>
+          <select id="import-tag-select" class="edit-tag-select" onchange="handleImportTagSelect(this)">
+            <option value="">— Add tag —</option>
+            <option value="__new__">＋ Add new tag</option>
+          </select>
+          <div id="import-new-tag-row" class="edit-tag-add" style="display:none">
+            <input type="text" id="import-new-tag" placeholder="New tags, comma-separated" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewImportTags();}">
+            <button type="button" onclick="addNewImportTags()">Add</button>
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" onclick="document.getElementById('add-link-modal').close()">Cancel</button>
+          <button type="submit" class="btn-primary">Import</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="confirm-modal" class="modal">
+    <div class="modal-content">
+      <p id="confirm-modal-msg" style="margin-bottom:1.25rem;line-height:1.5"></p>
+      <div class="modal-actions">
+        <button class="btn-ghost" id="confirm-modal-cancel">Cancel</button>
+        <button class="btn-danger" id="confirm-modal-ok">Delete</button>
+      </div>
+    </div>
+  </dialog>
+
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <div id="refresh-progress-toast" class="refresh-toast" style="display:none">
+    <span id="refresh-toast-text">Refreshing metadata…</span>
+    <button class="refresh-toast-close" onclick="hideRefreshToast()" title="Dismiss">
+      <i data-lucide="x"></i>
+    </button>
+  </div>
+
+  <script src="/static/app.js?v=032"></script>
+</body>
+</html>

@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Home — Tether{% endblock %}
+{% block content %}
+<div class="feed">
+  <div class="feed-header">
+    <div class="page-header">
+      <h1>Home</h1>
+      <span class="subtext" id="link-counts">{{ unread }} unread · {{ total }} total</span>
+    </div>
+
+    <div class="filter-row">
+      <div class="filter-bar">
+        <button class="filter-chip active" data-tag="">All</button>
+        <button class="filter-chip" data-unread="true">Unread</button>
+        <button class="filter-chip" data-read="true">Read</button>
+        <button class="filter-chip filter-chip-fav" data-fav="true" title="Favourites"><i data-lucide="star"></i></button>
+      </div>
+      <div class="search-box">
+        <i data-lucide="search"></i>
+        <input type="text" id="search-input" placeholder="Search links…" autocomplete="off">
+      </div>
+      <div class="view-toggle">
+        <button class="toggle-btn" title="Mark all as read" onclick="confirmMarkAll(true)">
+          <i data-lucide="check-check"></i>
+        </button>
+        <button class="toggle-btn" title="Mark all as unread" onclick="confirmMarkAll(false)">
+          <i data-lucide="eye-off"></i>
+        </button>
+      </div>
+      <div class="view-toggle">
+        <button class="toggle-btn active" id="btn-cards" title="Card view" onclick="setView('cards')">
+          <i data-lucide="layout-list"></i>
+        </button>
+        <button class="toggle-btn" id="btn-table" title="Compact view" onclick="setView('table')">
+          <i data-lucide="list"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="feed-card">
+    <div class="feed-scroll">
+      <div id="links-container" class="cards-view">
+        <div class="loading-state">Loading…</div>
+      </div>
+
+      <table id="links-table" class="links-table hidden">
+        <colgroup>
+          <col style="width:36px">
+          <col>
+          <col style="width:180px">
+          <col style="width:85px">
+          <col style="width:160px">
+        </colgroup>
+        <thead>
+          <tr>
+            <th></th>
+            <th>Title / URL</th>
+            <th>Tags</th>
+            <th>Saved</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div><!-- /.feed -->
+
+<template id="card-template">
+  <article class="link-card" data-id="">
+    <div class="card-header">
+      <img class="favicon" src="" alt="" onerror="this.style.display='none'">
+      <a class="card-title" href="" target="_blank" rel="noopener"></a>
+      <button class="icon-btn read-btn" title="Mark as read">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      </button>
+      <button class="icon-btn delete-btn" title="Delete">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
+      </button>
+    </div>
+    <p class="card-desc"></p>
+    <div class="card-footer">
+      <span class="card-url"></span>
+      <div class="card-tags"></div>
+    </div>
+  </article>
+</template>
+
+<template id="row-template">
+  <tr data-id="">
+    <td class="row-favicon"><img class="favicon" src="" alt="" onerror="this.style.display='none'"></td>
+    <td class="row-title"><a href="" target="_blank" rel="noopener"></a></td>
+    <td class="row-tags"></td>
+    <td class="row-date"></td>
+    <td class="row-actions">
+      <button class="icon-btn read-btn" title="Mark as read">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+      </button>
+      <button class="icon-btn delete-btn" title="Delete">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
+      </button>
+    </td>
+  </tr>
+</template>
+
+<dialog id="edit-modal" class="modal">
+  <div class="modal-content">
+    <h2>Edit link</h2>
+    <form id="edit-form" onsubmit="saveLink(event)">
+      <input type="hidden" id="edit-link-id">
+      <div class="form-group">
+        <label for="edit-title">Title</label>
+        <input type="text" id="edit-title" placeholder="Page title" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label for="edit-url">URL</label>
+        <input type="url" id="edit-url" placeholder="https://…" required autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label>Tags</label>
+        <div id="edit-tag-list" class="edit-tag-list"></div>
+        <select id="edit-tag-select" class="edit-tag-select" onchange="handleTagSelect(this)">
+          <option value="">— Add tag —</option>
+          <option value="__new__">＋ Add new tag</option>
+        </select>
+        <div id="edit-new-tag-row" class="edit-tag-add" style="display:none">
+          <input type="text" id="edit-new-tag" placeholder="New tags, comma-separated" autocomplete="off" onkeydown="handleTagKey(event)">
+          <button type="button" onclick="addNewEditTags()">Add</button>
+        </div>
+      </div>
+      <div class="form-group form-group-inline">
+        <label>
+          <input type="checkbox" id="edit-favourite">
+          Favourite
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" onclick="document.getElementById('edit-modal').close()">Cancel</button>
+        <button type="button" class="btn-ghost" id="edit-refresh-btn" onclick="refreshLinkMetadata()">
+          <i data-lucide="refresh-cw"></i>
+          Refresh metadata
+        </button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+{% endblock %}
