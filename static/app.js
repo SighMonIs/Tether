@@ -465,7 +465,7 @@ async function importData(input) {
   try {
     const res = await fetch("/api/import", {
       method: "POST",
-      headers: { "x-tether-uuid": headers()["x-tether-uuid"] },
+      headers: { "X-Tether-UUID": UUID_HEADER() },
       body: form,
     });
     const data = await res.json();
