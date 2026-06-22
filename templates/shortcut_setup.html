@@ -231,7 +231,7 @@
 
     <p class="value-label">Server URL</p>
     <div class="value-box">
-      <code id="val-url">http://{{ local_ip }}:{{ port }}</code>
+      <code id="val-url">{{ local_ip }}</code>
       <button class="copy-btn" onclick="copyId('val-url')" title="Copy">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
       </button>
@@ -255,7 +255,7 @@
 
 Step 1: Get URLs from the shared input.
 
-Step 2: Make a GET request to http://{{ local_ip }}:{{ port }}/api/tags?shortcut=true with the HTTP header X-Tether-UUID set to {{ api_uuid }}.
+Step 2: Make a GET request to {{ local_ip }}/api/tags?shortcut=true with the HTTP header X-Tether-UUID set to {{ api_uuid }}.
 
 Step 3: Repeat with each item in the result. Inside the loop, get the dictionary from each repeat item, then get the value for the key "name" from that dictionary. End the repeat.
 
@@ -263,7 +263,7 @@ Step 4: Show a Choose from List using the Repeat Results. Allow selecting multip
 
 Step 5: If the Chosen Items contains "+ New", ask for input with the prompt "New categories (comma-separated)". Otherwise set a variable called New Categories to an empty string. End the if.
 
-Step 6: Make a POST request to http://{{ local_ip }}:{{ port }}/api/links with headers X-Tether-UUID set to {{ api_uuid }} and Content-Type set to application/json. Set the JSON body with key "url" as a Text field set to the URLs magic variable from step 1, key "tags" as a List field set to the Chosen Item magic variable from step 4, and key "new_tags" as a Text field set to the Provided Input magic variable from step 5. Do NOT use "Ask Each Time" for any of these fields — use magic variables only.
+Step 6: Make a POST request to {{ local_ip }}/api/links with headers X-Tether-UUID set to {{ api_uuid }} and Content-Type set to application/json. Set the JSON body with key "url" as a Text field set to the URLs magic variable from step 1, key "tags" as a List field set to the Chosen Item magic variable from step 4, and key "new_tags" as a Text field set to the Provided Input magic variable from step 5. Do NOT use "Ask Each Time" for any of these fields — use magic variables only.
 
 Step 7: Show a notification with the title "Tethered!"</code>
       <button class="copy-btn" style="align-self:flex-end;min-width:unset;padding:0.4rem 0.75rem;gap:0.4rem;font-size:0.82rem;border-radius:7px" onclick="copyId('ai-prompt')">
@@ -319,7 +319,7 @@ Step 7: Show a notification with the title "Tethered!"</code>
           <div class="action-block">
             <div class="ab-row">
               <span class="ab-label">URL</span>
-              <span class="cc"><code>http://{{ local_ip }}:{{ port }}/api/tags?shortcut=true</code><button onclick="copyText('http://{{ local_ip }}:{{ port }}/api/tags?shortcut=true')" title="Copy">&#x2398;</button></span>
+              <span class="cc"><code>{{ local_ip }}/api/tags?shortcut=true</code><button onclick="copyText('{{ local_ip }}/api/tags?shortcut=true')" title="Copy">&#x2398;</button></span>
             </div>
             <div class="ab-row">
               <span class="ab-label">Method</span>
@@ -454,7 +454,7 @@ Step 7: Show a notification with the title "Tethered!"</code>
           <div class="action-block">
             <div class="ab-row">
               <span class="ab-label">URL</span>
-              <span class="cc"><code>http://{{ local_ip }}:{{ port }}/api/links</code><button onclick="copyText('http://{{ local_ip }}:{{ port }}/api/links')" title="Copy">&#x2398;</button></span>
+              <span class="cc"><code>{{ local_ip }}/api/links</code><button onclick="copyText('{{ local_ip }}/api/links')" title="Copy">&#x2398;</button></span>
             </div>
             <div class="ab-row">
               <span class="ab-label">Method</span>
