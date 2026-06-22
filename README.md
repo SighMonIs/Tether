@@ -23,7 +23,7 @@ A self-hosted read-later app. Save links from your browser or iPhone, organise t
 
 1. **Create a `docker-compose.yml`**
 
-   ```yaml
+```yaml
 services:
   tether:
     image: ghcr.io/sighmonis/tether:latest
