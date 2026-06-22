@@ -1,14 +1,30 @@
 import uuid
 import json as _json
+import traceback
+from collections import deque
+from datetime import datetime, timezone
 import httpx
 from bs4 import BeautifulSoup
-from fastapi import APIRouter, Header, HTTPException, BackgroundTasks, Request
+from fastapi import APIRouter, Header, HTTPException, BackgroundTasks, Request, UploadFile, File
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, field_validator
 from typing import Any
 
 from db import db, get_setting, set_setting
 
 router = APIRouter(prefix="/api")
+
+# ── Error log ─────────────────────────────────────────────────────────────────
+_error_log: deque = deque(maxlen=200)
+
+
+def _log_error(source: str, exc: Exception):
+    _error_log.appendleft({
+        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "source": source,
+        "error": type(exc).__name__,
+        "detail": str(exc),
+    })
 
 TAG_COLORS = [
     "#6366f1", "#ec4899", "#10b981", "#f59e0b",
@@ -147,8 +163,8 @@ async def _fetch_metadata(link_id: str, url: str):
                     link_id,
                 ),
             )
-    except Exception:
-        pass  # metadata is best-effort
+    except Exception as exc:
+        _log_error(f"metadata:{url}", exc)
 
 
 # ── Bulk refresh state ────────────────────────────────────────────────────────
@@ -548,3 +564,89 @@ def save_instagram_token(body: SettingValue, x_tether_uuid: str | None = Header(
     _check_auth(x_tether_uuid)
     set_setting("instagram_app_token", body.value.strip())
     return {"ok": True}
+
+
+# ── Export / Import ───────────────────────────────────────────────────────────
+
+@router.get("/export")
+def export_data(x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    with db() as conn:
+        links = [dict(r) for r in conn.execute(
+            "SELECT id, url, title, description, favicon_url, is_read, is_favourite, created_at, read_at FROM links ORDER BY created_at"
+        ).fetchall()]
+        tags = [dict(r) for r in conn.execute("SELECT id, name, color FROM tags").fetchall()]
+        link_tags = [dict(r) for r in conn.execute("SELECT link_id, tag_id FROM link_tags").fetchall()]
+
+    payload = _json.dumps({"version": 1, "links": links, "tags": tags, "link_tags": link_tags}, indent=2)
+    return Response(
+        content=payload,
+        media_type="application/json",
+        headers={"Content-Disposition": "attachment; filename=tether-export.json"},
+    )
+
+
+@router.post("/import", status_code=200)
+async def import_data(
+    file: UploadFile = File(...),
+    x_tether_uuid: str | None = Header(default=None),
+):
+    _check_auth(x_tether_uuid)
+    try:
+        raw = await file.read()
+        data = _json.loads(raw)
+        if data.get("version") != 1:
+            raise HTTPException(status_code=400, detail="Unsupported export version")
+
+        with db() as conn:
+            # Upsert tags (match by name, preserve existing ids where possible)
+            tag_id_map: dict[int, int] = {}
+            for tag in data.get("tags", []):
+                existing = conn.execute("SELECT id FROM tags WHERE name=? COLLATE NOCASE", (tag["name"],)).fetchone()
+                if existing:
+                    tag_id_map[tag["id"]] = existing["id"]
+                else:
+                    cur = conn.execute("INSERT INTO tags(name, color) VALUES(?,?)", (tag["name"], tag["color"]))
+                    tag_id_map[tag["id"]] = cur.lastrowid
+
+            # Upsert links (skip duplicates by id)
+            imported = 0
+            for link in data.get("links", []):
+                exists = conn.execute("SELECT 1 FROM links WHERE id=?", (link["id"],)).fetchone()
+                if not exists:
+                    conn.execute(
+                        "INSERT INTO links(id, url, title, description, favicon_url, is_read, is_favourite, created_at, read_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                        (link["id"], link["url"], link.get("title"), link.get("description"),
+                         link.get("favicon_url"), link.get("is_read", 0), link.get("is_favourite", 0),
+                         link.get("created_at"), link.get("read_at")),
+                    )
+                    imported += 1
+
+            # Restore link→tag relationships
+            for lt in data.get("link_tags", []):
+                new_tag_id = tag_id_map.get(lt["tag_id"])
+                if not new_tag_id:
+                    continue
+                conn.execute(
+                    "INSERT OR IGNORE INTO link_tags(link_id, tag_id) VALUES(?,?)",
+                    (lt["link_id"], new_tag_id),
+                )
+
+        return {"imported": imported, "tags": len(tag_id_map)}
+    except _json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid JSON file")
+    except Exception as exc:
+        _log_error("import", exc)
+        raise HTTPException(status_code=500, detail="Import failed")
+
+
+@router.get("/errors")
+def get_errors(x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    return list(_error_log)
+
+
+@router.delete("/errors", status_code=204)
+def clear_errors(x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    _error_log.clear()

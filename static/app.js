@@ -412,6 +412,75 @@ async function startBulkRefresh(btn) {
 })();
 
 /* ── Settings page ───────────────────────────────────────── */
+async function loadErrorLog() {
+  const wrap = document.getElementById("error-log");
+  const empty = document.getElementById("error-log-empty");
+  if (!wrap) return;
+  const errors = await fetch("/api/errors", { headers: headers() }).then(r => r.json());
+  if (!errors.length) { wrap.style.display = "none"; empty.style.display = ""; return; }
+  empty.style.display = "none";
+  wrap.style.display = "flex";
+  wrap.innerHTML = errors.map(e => `
+    <div class="error-entry">
+      <span class="error-entry-ts">${e.ts.replace("T", " ").replace("+00:00", " UTC")}</span>
+      <span class="error-entry-type">${e.error}</span>
+      <span class="error-entry-source">${e.source}</span>
+      <span class="error-entry-detail">${e.detail}</span>
+    </div>`).join("");
+}
+
+async function clearErrorLog() {
+  await fetch("/api/errors", { method: "DELETE", headers: headers() });
+  const wrap = document.getElementById("error-log");
+  const empty = document.getElementById("error-log-empty");
+  if (wrap) { wrap.style.display = "none"; wrap.innerHTML = ""; }
+  if (empty) empty.style.display = "";
+  toast("Error log cleared");
+}
+
+function exportData() {
+  const a = document.createElement("a");
+  a.href = "/api/export";
+  a.setAttribute("x-tether-uuid", headers()["x-tether-uuid"] || "");
+  // Pass auth via query isn't ideal — use a fetch + blob instead
+  fetch("/api/export", { headers: headers() })
+    .then(r => r.blob())
+    .then(blob => {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "tether-export.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+}
+
+async function importData(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const hint = document.getElementById("import-hint");
+  hint.textContent = "Importing…";
+  const form = new FormData();
+  form.append("file", file);
+  try {
+    const res = await fetch("/api/import", {
+      method: "POST",
+      headers: { "x-tether-uuid": headers()["x-tether-uuid"] },
+      body: form,
+    });
+    const data = await res.json();
+    if (res.ok) {
+      hint.textContent = `Imported ${data.imported} links and ${data.tags} tags.`;
+      toast(`Imported ${data.imported} links`);
+    } else {
+      hint.textContent = `Error: ${data.detail || "Import failed"}`;
+    }
+  } catch {
+    hint.textContent = "Something went wrong.";
+  }
+  input.value = "";
+}
+
 function copyUUID() {
   const text = document.getElementById("uuid-text")?.textContent;
   if (text) navigator.clipboard.writeText(text).then(() => toast("Copied!"));
@@ -924,4 +993,5 @@ document.addEventListener("DOMContentLoaded", () => {
     updateCounts();
   }
   loadInstagramToken();
+  loadErrorLog();
 });

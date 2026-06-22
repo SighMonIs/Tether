@@ -1,77 +1,108 @@
 {% extends "base.html" %}
 {% block title %}Settings — Tether{% endblock %}
 {% block content %}
-<div class="page-header">
-  <div>
-    <h1>Settings</h1>
-    <p class="subtext">Server running at {{ local_ip }}:5225</p>
+<div class="feed">
+  <div class="feed-header">
+    <div class="page-header">
+      <h1>Settings</h1>
+      <span class="subtext">Server running at {{ local_ip }}:5225</span>
+    </div>
   </div>
-</div>
 
-<div class="settings-grid">
-  <section class="settings-card">
-    <h2>iOS Shortcut</h2>
-    <p>Scan this QR code on your iPhone to set up the Tether shortcut. Your phone must be on the same Wi-Fi network.</p>
-    <div class="qr-wrap">
-      <img src="/qr.png" alt="QR code linking to shortcut setup" width="200" height="200">
+  <div class="feed-card">
+    <div class="feed-scroll">
+      <div class="settings-grid">
+
+        <section class="settings-card">
+          <h2>iOS Shortcut</h2>
+          <p>Scan this QR code on your iPhone to set up the Tether shortcut. Your phone must be on the same Wi-Fi network.</p>
+          <div class="qr-wrap">
+            <img src="/qr.png" alt="QR code linking to shortcut setup" width="200" height="200">
+          </div>
+          <p class="qr-hint">Points to <code>http://{{ local_ip }}:5225/shortcut-setup</code></p>
+          <a href="/shortcut-setup" class="btn-primary" style="display:inline-flex;margin-top:1rem">
+            Open setup page
+          </a>
+        </section>
+
+        <section class="settings-card">
+          <h2>API key (UUID)</h2>
+          <p>This UUID is embedded in your shortcut and authenticates all requests. Keep it private.</p>
+          <div class="uuid-display">
+            <code id="uuid-text">{{ api_uuid }}</code>
+            <button class="icon-btn" onclick="copyUUID()" title="Copy">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </div>
+          <p class="hint">If you regenerate this key you will need to re-download the shortcut.</p>
+          <button class="btn-danger" onclick="confirmRegenerate()">Regenerate key</button>
+        </section>
+
+        <section class="settings-card">
+          <h2>Refresh metadata</h2>
+          <p>Re-fetch titles and descriptions for all links. Useful if links were saved with missing or incorrect metadata.</p>
+          <p class="hint">Instagram links require an app token — see the Instagram section below.</p>
+          <button class="btn-primary" id="refresh-all-btn" onclick="startBulkRefresh(this)">Refresh all links</button>
+        </section>
+
+        <section class="settings-card">
+          <h2>Export &amp; Import</h2>
+          <p>Export all your links and tags to a JSON file, or import a previously exported file. Importing will add any links that don't already exist — it won't overwrite or delete anything.</p>
+          <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:0.75rem">
+            <button class="btn-primary" onclick="exportData()">Export data</button>
+            <label class="btn-ghost" style="cursor:pointer">
+              Import data
+              <input type="file" accept=".json" style="display:none" onchange="importData(this)">
+            </label>
+          </div>
+          <p class="hint" id="import-hint" style="margin-top:0.5rem"></p>
+        </section>
+
+        <section class="settings-card">
+          <h2>Instagram metadata</h2>
+          <p>Instagram blocks metadata requests without a Meta app token. Getting one is free and takes about 5 minutes — anyone sharing this app can follow the same steps.</p>
+          <ol class="settings-steps">
+            <li>Go to <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a> and sign in with any Facebook account.</li>
+            <li>Click <strong>Create App</strong>, choose <strong>Other</strong>, then <strong>Consumer</strong>, and give it any name.</li>
+            <li>Once created, go to <strong>App Settings → Basic</strong>. Copy the <strong>App ID</strong> and <strong>App secret</strong>.</li>
+            <li>Your token is: <code>App ID|App secret</code> (joined with a pipe character, no spaces).</li>
+            <li>Paste it below and click Save.</li>
+          </ol>
+          <div class="uuid-display" style="margin-top:1rem">
+            <input type="password" id="instagram-token-input" class="token-input" placeholder="App ID|App secret" autocomplete="off">
+            <button class="icon-btn" onclick="toggleInstagramToken()" title="Show/hide">
+              <i data-lucide="eye"></i>
+            </button>
+          </div>
+          <div style="margin-top:0.75rem;display:flex;gap:0.5rem;align-items:center">
+            <button class="btn-primary" onclick="saveInstagramToken()">Save</button>
+            <button class="btn-ghost" onclick="clearInstagramToken()">Clear</button>
+          </div>
+          <p class="hint" id="instagram-token-hint" style="margin-top:0.5rem"></p>
+        </section>
+
+        <section class="settings-card">
+          <h2>Error log</h2>
+          <p>Errors from metadata fetches and imports. Cleared when the server restarts.</p>
+          <div id="error-log-wrap">
+            <p class="hint" id="error-log-empty" style="margin-top:0.5rem">No errors recorded.</p>
+            <div id="error-log" class="error-log" style="display:none"></div>
+          </div>
+          <button class="btn-ghost" style="margin-top:0.75rem" onclick="clearErrorLog()">Clear log</button>
+        </section>
+
+        <section class="settings-card">
+          <h2>Server info</h2>
+          <dl class="info-list">
+            <dt>Local IP</dt><dd><code>{{ local_ip }}</code></dd>
+            <dt>Port</dt><dd><code>5225</code></dd>
+            <dt>API base</dt><dd><code>http://{{ local_ip }}:5225/api</code></dd>
+          </dl>
+        </section>
+
+      </div>
     </div>
-    <p class="qr-hint">Points to <code>http://{{ local_ip }}:5225/shortcut-setup</code></p>
-    <a href="/shortcut-setup" class="btn-primary" style="display:inline-flex;margin-top:1rem">
-      Open setup page
-    </a>
-  </section>
-
-  <section class="settings-card">
-    <h2>API key (UUID)</h2>
-    <p>This UUID is embedded in your shortcut and authenticates all requests. Keep it private.</p>
-    <div class="uuid-display">
-      <code id="uuid-text">{{ api_uuid }}</code>
-      <button class="icon-btn" onclick="copyUUID()" title="Copy">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-      </button>
-    </div>
-    <p class="hint">If you regenerate this key you will need to re-download the shortcut.</p>
-    <button class="btn-danger" onclick="confirmRegenerate()">Regenerate key</button>
-  </section>
-
-  <section class="settings-card">
-    <h2>Refresh metadata</h2>
-    <p>Re-fetch titles and descriptions for all links. Useful if links were saved with missing or incorrect metadata.</p>
-    <p class="hint">Instagram links require an app token — see the Instagram section below.</p>
-    <button class="btn-primary" id="refresh-all-btn" onclick="startBulkRefresh(this)">Refresh all links</button>
-  </section>
-
-  <section class="settings-card">
-    <h2>Instagram metadata</h2>
-    <p>Instagram blocks metadata requests without a Meta app token. Getting one is free and takes about 5 minutes — anyone sharing this app can follow the same steps.</p>
-    <ol class="settings-steps">
-      <li>Go to <a href="https://developers.facebook.com/apps" target="_blank" rel="noopener">developers.facebook.com/apps</a> and sign in with any Facebook account.</li>
-      <li>Click <strong>Create App</strong>, choose <strong>Other</strong>, then <strong>Consumer</strong>, and give it any name.</li>
-      <li>Once created, go to <strong>App Settings → Basic</strong>. Copy the <strong>App ID</strong> and <strong>App secret</strong>.</li>
-      <li>Your token is: <code>App ID|App secret</code> (joined with a pipe character, no spaces).</li>
-      <li>Paste it below and click Save.</li>
-    </ol>
-    <div class="uuid-display" style="margin-top:1rem">
-      <input type="password" id="instagram-token-input" class="token-input" placeholder="App ID|App secret" autocomplete="off">
-      <button class="icon-btn" onclick="toggleInstagramToken()" title="Show/hide">
-        <i data-lucide="eye"></i>
-      </button>
-    </div>
-    <div style="margin-top:0.75rem;display:flex;gap:0.5rem;align-items:center">
-      <button class="btn-primary" onclick="saveInstagramToken()">Save</button>
-      <button class="btn-ghost" onclick="clearInstagramToken()">Clear</button>
-    </div>
-    <p class="hint" id="instagram-token-hint" style="margin-top:0.5rem"></p>
-  </section>
-
-  <section class="settings-card">
-    <h2>Server info</h2>
-    <dl class="info-list">
-      <dt>Local IP</dt><dd><code>{{ local_ip }}</code></dd>
-      <dt>Port</dt><dd><code>5225</code></dd>
-      <dt>API base</dt><dd><code>http://{{ local_ip }}:5225/api</code></dd>
-    </dl>
-  </section>
+  </div>
 </div>
 
 <dialog id="regen-modal" class="modal">
