@@ -595,7 +595,7 @@ async def import_data(
     try:
         raw = await file.read()
         data = _json.loads(raw)
-        if data.get("version") != 1:
+        if data.get("version") not in (1, None):
             raise HTTPException(status_code=400, detail="Unsupported export version")
 
         with db() as conn:
@@ -636,11 +636,13 @@ async def import_data(
                 )
 
         return {"imported": imported, "skipped": skipped, "tags": len(tag_id_map)}
+    except HTTPException:
+        raise
     except _json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON file")
     except Exception as exc:
         _log_error("import", exc)
-        raise HTTPException(status_code=500, detail="Import failed")
+        raise HTTPException(status_code=500, detail=f"Import failed: {type(exc).__name__}: {exc}")
 
 
 @router.get("/errors")
