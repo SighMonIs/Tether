@@ -21,19 +21,12 @@ A self-hosted read-later app. Save links from your browser or iPhone, organise t
 
 ### Quick start
 
-1. **Clone the repo**
-
-   ```bash
-   git clone https://github.com/SighMonIs/Tether.git
-   cd Tether
-   ```
-
-2. **Create a `docker-compose.yml`** (or use the one included in the repo)
+1. **Create a `docker-compose.yml`**
 
    ```yaml
 services:
   tether:
-    build: .
+    image: ghcr.io/sighmonis/tether:latest
     ports:
       - "5225:5225"
     volumes:
@@ -44,13 +37,13 @@ volumes:
   tether-data:
 ```
 
-3. **Start the container**
+2. **Start the container**
 
    ```bash
    docker compose up -d
    ```
 
-4. **Open the app**
+3. **Open the app**
 
    Navigate to [http://localhost:5225](http://localhost:5225)
 
@@ -60,7 +53,7 @@ Your data is stored in a Docker volume (`tether-data`) and persists across resta
 
 ```bash
 docker compose pull
-docker compose up -d --build
+docker compose up -d
 ```
 
 ### Stopping

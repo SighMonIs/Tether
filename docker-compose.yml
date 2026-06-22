@@ -1,6 +1,6 @@
 services:
   tether:
-    build: .
+    image: ghcr.io/sighmonis/tether:latest
     ports:
       - "5225:5225"
     volumes:
