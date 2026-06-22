@@ -20,7 +20,7 @@ _error_log: deque = deque(maxlen=200)
 
 def _log_error(source: str, exc: Exception):
     _error_log.appendleft({
-        "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "ts": datetime.now().astimezone().strftime("%Y-%m-%d %H:%M:%S"),
         "source": source,
         "error": type(exc).__name__,
         "detail": str(exc),
