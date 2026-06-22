@@ -28,13 +28,29 @@ A self-hosted read-later app. Save links from your browser or iPhone, organise t
    cd Tether
    ```
 
-2. **Start the container**
+2. **Create a `docker-compose.yml`** (or use the one included in the repo)
+
+   ```yaml
+services:
+  tether:
+    build: .
+    ports:
+      - "5225:5225"
+    volumes:
+      - tether-data:/data
+    restart: unless-stopped
+
+volumes:
+  tether-data:
+```
+
+3. **Start the container**
 
    ```bash
    docker compose up -d
    ```
 
-3. **Open the app**
+4. **Open the app**
 
    Navigate to [http://localhost:5225](http://localhost:5225)
 

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python -c \"\nimport json, sys, re\ndata = json.load(sys.stdin)\nf = data.get('tool_input', {}).get('file_path', '')\nif 'docker-compose.yml' not in f:\n    sys.exit(0)\nwith open('C:/Users/simon/github/tether/docker-compose.yml') as fh:\n    compose = fh.read().rstrip()\nwith open('C:/Users/simon/github/tether/README.md') as fh:\n    readme = fh.read()\ndef replacer(m):\n    return m.group(1) + compose + '\\n' + m.group(2)\nnew_readme = re.sub(r'(\\x60\\x60\\x60yaml\\n).*?(\\x60\\x60\\x60)', replacer, readme, flags=re.DOTALL)\nif new_readme != readme:\n    with open('C:/Users/simon/github/tether/README.md', 'w') as fh:\n        fh.write(new_readme)\n\" 2>/dev/null || true",
+            "shell": "bash"
+          }
+        ]
+      }
+    ]
+  }
+}
