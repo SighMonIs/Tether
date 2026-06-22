@@ -1,4 +1,5 @@
 import io
+import os
 import socket
 import plistlib
 import qrcode
@@ -13,15 +14,18 @@ router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
 
 
-def _get_local_ip() -> str:
+def _get_base_url() -> str:
+    override = os.environ.get("TETHER_BASE_URL", "").strip().rstrip("/")
+    if override:
+        return override
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
-        return ip
+        return f"http://{ip}:5225"
     except Exception:
-        return "localhost"
+        return "http://localhost:5225"
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -61,21 +65,21 @@ async def categories(request: Request):
 @router.get("/settings", response_class=HTMLResponse)
 async def settings(request: Request):
     api_uuid = get_setting("uuid")
-    local_ip = _get_local_ip()
-    setup_url = f"http://{local_ip}:5225/shortcut-setup"
+    base_url = _get_base_url()
+    setup_url = f"{base_url}/shortcut-setup"
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "tether_uuid": api_uuid,
         "api_uuid": api_uuid,
         "setup_url": setup_url,
-        "local_ip": local_ip,
+        "local_ip": base_url,
     })
 
 
 @router.get("/qr.png")
 async def qr_png():
-    local_ip = _get_local_ip()
-    setup_url = f"http://{local_ip}:5225/shortcut-setup"
+    base_url = _get_base_url()
+    setup_url = f"{base_url}/shortcut-setup"
     img = qrcode.make(setup_url)
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -85,11 +89,11 @@ async def qr_png():
 @router.get("/shortcut-setup", response_class=HTMLResponse)
 async def shortcut_setup(request: Request):
     api_uuid = get_setting("uuid")
-    local_ip = _get_local_ip()
+    base_url = _get_base_url()
     return templates.TemplateResponse("shortcut_setup.html", {
         "request": request,
         "api_uuid": api_uuid,
-        "local_ip": local_ip,
+        "local_ip": base_url,
         "port": 5225,
     })
 
@@ -98,8 +102,7 @@ async def shortcut_setup(request: Request):
 async def download_shortcut():
     """Dynamically generate a .shortcut plist with the correct server URL and UUID."""
     api_uuid = get_setting("uuid")
-    local_ip = _get_local_ip()
-    base_url = f"http://{local_ip}:5225"
+    base_url = _get_base_url()
 
     # iOS Shortcut plist structure
     shortcut = {
