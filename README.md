@@ -31,6 +31,8 @@ services:
       - "5225:5225"
     volumes:
       - ./tether-data:/data
+    environment:
+      - TZ=Australia/Melbourne
     restart: unless-stopped
 ```
 
