@@ -29,6 +29,10 @@
     "activeTab",
     "storage"
   ],
+  "data_collection_permissions": {
+    "required": [],
+    "optional": []
+  },
   "background": {
     "scripts": ["background.js"],
     "persistent": false
