@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tether — Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <svg class="logo" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M12 4 L12 20 M7 8 L12 4 L17 8" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="12" cy="20" r="2" fill="white"/>
+      </svg>
+      <h1>Tether</h1>
+    </div>
+
+    <div class="card">
+      <h2>Connection</h2>
+      <p class="hint">Find these values on your Tether server's Settings page.</p>
+
+      <div class="field">
+        <label for="server-url">Server URL</label>
+        <input
+          type="url"
+          id="server-url"
+          placeholder="http://192.168.1.x:5225"
+          autocomplete="off"
+          spellcheck="false"
+        >
+        <span class="field-hint">Include the protocol and port, no trailing slash.</span>
+      </div>
+
+      <div class="field">
+        <label for="uuid">API Key (UUID)</label>
+        <div class="input-row">
+          <input
+            type="password"
+            id="uuid"
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            autocomplete="off"
+            spellcheck="false"
+          >
+          <button class="icon-btn" id="toggle-uuid" title="Show / hide">
+            <svg id="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/>
+            </svg>
+          </button>
+        </div>
+        <span class="field-hint">Shown on the Settings page under "API key (UUID)".</span>
+      </div>
+
+      <div class="actions">
+        <button class="btn-primary" id="save-btn">Save</button>
+        <button class="btn-ghost" id="test-btn">Test connection</button>
+      </div>
+
+      <div id="status" class="status" style="display:none"></div>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

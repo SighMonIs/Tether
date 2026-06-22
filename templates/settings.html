@@ -14,6 +14,25 @@
       <div class="settings-grid">
 
         <section class="settings-card">
+          <h2>Firefox Extension</h2>
+          <p>Save links to Tether directly from Firefox. Click the extension icon on any page to save the URL and assign tags.</p>
+          <ol class="settings-steps">
+            <li>Download the extension folder from your server or copy <code>firefox-extension/</code> from the Tether repo to your computer.</li>
+            <li>Open Firefox and go to <code>about:debugging#/runtime/this-firefox</code>.</li>
+            <li>Click <strong>Load Temporary Add-on</strong> and select the <code>manifest.json</code> file inside the extension folder.</li>
+            <li>The Tether icon will appear in your toolbar. Click it and open <strong>Settings</strong>.</li>
+            <li>Enter your server URL and the API key shown below, then click <strong>Test connection</strong>.</li>
+          </ol>
+          <div class="uuid-display" style="margin-top:1rem">
+            <code id="ext-uuid-text">{{ api_uuid }}</code>
+            <button class="icon-btn" onclick="copyExtUUID()" title="Copy API key">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </div>
+          <p class="hint" style="margin-top:0.5rem">Server URL: <code>http://{{ local_ip }}:5225</code></p>
+        </section>
+
+        <section class="settings-card">
           <h2>iOS Shortcut</h2>
           <p>Scan this QR code on your iPhone to view the setup page to set up the Tether shortcut via Option A (Generate with AI, iOS 27+) or Option B (Manual setup).</p>
           <div class="qr-wrap">

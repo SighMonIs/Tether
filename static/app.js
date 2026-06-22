@@ -491,6 +491,11 @@ function copyUUID() {
   if (text) navigator.clipboard.writeText(text).then(() => toast("Copied!"));
 }
 
+function copyExtUUID() {
+  const text = document.getElementById("ext-uuid-text")?.textContent;
+  if (text) navigator.clipboard.writeText(text).then(() => toast("Copied!"));
+}
+
 function confirmRegenerate() {
   document.getElementById("regen-modal")?.showModal();
 }
