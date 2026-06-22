@@ -30,11 +30,8 @@ services:
     ports:
       - "5225:5225"
     volumes:
-      - tether-data:/data
+      - ./tether-data:/data
     restart: unless-stopped
-
-volumes:
-  tether-data:
 ```
 
 2. **Start the container**
