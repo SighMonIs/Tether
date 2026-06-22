@@ -611,6 +611,7 @@ async def import_data(
 
             # Upsert links (skip duplicates by id)
             imported = 0
+            skipped = 0
             for link in data.get("links", []):
                 exists = conn.execute("SELECT 1 FROM links WHERE id=?", (link["id"],)).fetchone()
                 if not exists:
@@ -621,6 +622,8 @@ async def import_data(
                          link.get("created_at"), link.get("read_at")),
                     )
                     imported += 1
+                else:
+                    skipped += 1
 
             # Restore link→tag relationships
             for lt in data.get("link_tags", []):
@@ -632,7 +635,7 @@ async def import_data(
                     (lt["link_id"], new_tag_id),
                 )
 
-        return {"imported": imported, "tags": len(tag_id_map)}
+        return {"imported": imported, "skipped": skipped, "tags": len(tag_id_map)}
     except _json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON file")
     except Exception as exc:

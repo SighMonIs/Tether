@@ -470,10 +470,15 @@ async function importData(input) {
     });
     const data = await res.json();
     if (res.ok) {
-      hint.textContent = `Imported ${data.imported} links and ${data.tags} tags.`;
-      toast(`Imported ${data.imported} links`);
+      hint.textContent = "";
+      const parts = [];
+      if (data.imported > 0) parts.push(`${data.imported} new link${data.imported !== 1 ? "s" : ""}`);
+      if (data.skipped > 0) parts.push(`${data.skipped} already existed`);
+      if (data.tags > 0) parts.push(`${data.tags} tag${data.tags !== 1 ? "s" : ""}`);
+      toast(parts.length ? `Imported: ${parts.join(", ")}` : "Nothing new to import");
     } else {
-      hint.textContent = `Error: ${data.detail || "Import failed"}`;
+      hint.textContent = "";
+      toast(`Import failed: ${data.detail || "Unknown error"}`);
     }
   } catch {
     hint.textContent = "Something went wrong.";
