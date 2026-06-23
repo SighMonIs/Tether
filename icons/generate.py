@@ -1,56 +1,50 @@
 from PIL import Image, ImageDraw
-import math, os
+import os
 
-SIZES = [16, 32, 48, 96, 128, 256, 512]
-ACCENT = (99, 102, 241)
-WHITE  = (255, 255, 255)
+SIZES  = [16, 32, 48, 96, 128, 256, 512]
+ACCENT = (99, 102, 241, 255)
+WHITE  = (255, 255, 255, 255)
+SCALE  = 4  # supersample factor
 
-def rounded_rect_mask(size, radius):
-    mask = Image.new("L", (size, size), 0)
-    d = ImageDraw.Draw(mask)
-    d.rounded_rectangle([0, 0, size - 1, size - 1], radius=radius, fill=255)
-    return mask
-
-def draw_icon(size):
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+def draw_icon_at(size):
+    s = size * SCALE
+    img  = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
 
-    radius = round(size * 0.219)
+    radius = round(s * 0.219)
+    draw.rounded_rectangle([0, 0, s - 1, s - 1], radius=radius, fill=ACCENT)
 
-    bg = Image.new("RGBA", (size, size), ACCENT + (255,))
-    mask = rounded_rect_mask(size, radius)
-    img.paste(bg, mask=mask)
-
-    draw = ImageDraw.Draw(img)
-
-    cx   = size / 2
-    top  = size * 0.188
-    bot  = size * 0.773
-    armY = size * 0.391
-    armW = size * 0.203
-    lw   = max(2, round(size * 0.066))
-    dot  = size * 0.070
+    cx   = s / 2
+    top  = s * 0.188
+    bot  = s * 0.773
+    armY = s * 0.390
+    armW = s * 0.200
+    lw   = max(3, round(s * 0.066))
+    dot  = s * 0.072
 
     # vertical line
     draw.line([(cx, top), (cx, bot)], fill=WHITE, width=lw)
 
-    # arrowhead — draw as thick polyline using multiple offsets for rounded joins
-    pts = [(cx - armW, armY), (cx, top), (cx + armW, armY)]
-    draw.line(pts, fill=WHITE, width=lw, joint="curve")
+    # arrowhead left leg
+    draw.line([(cx - armW, armY), (cx, top)], fill=WHITE, width=lw)
+    # arrowhead right leg
+    draw.line([(cx, top), (cx + armW, armY)], fill=WHITE, width=lw)
 
-    # dot at bottom
-    draw.ellipse(
-        [cx - dot, bot - dot, cx + dot, bot + dot],
-        fill=WHITE
-    )
+    # round off the top tip and the two arm ends with filled circles
+    cap_r = lw / 2
+    for (px, py) in [(cx, top), (cx - armW, armY), (cx + armW, armY), (cx, bot)]:
+        draw.ellipse([px - cap_r, py - cap_r, px + cap_r, py + cap_r], fill=WHITE)
 
-    return img
+    # anchor dot
+    draw.ellipse([cx - dot, bot - dot, cx + dot, bot + dot], fill=WHITE)
 
-os.makedirs(os.path.dirname(__file__) or ".", exist_ok=True)
+    return img.resize((size, size), Image.LANCZOS)
+
+out_dir = os.path.dirname(os.path.abspath(__file__))
 
 for s in SIZES:
-    icon = draw_icon(s)
-    path = os.path.join(os.path.dirname(__file__), f"tether-icon-{s}.png")
+    icon = draw_icon_at(s)
+    path = os.path.join(out_dir, f"tether-icon-{s}.png")
     icon.save(path, "PNG")
     print(f"  {path}")
 
