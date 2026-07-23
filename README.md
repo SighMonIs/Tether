@@ -8,10 +8,9 @@ A self-hosted read-later app. Save links from your browser or iPhone, organise t
 - Organise with colour-coded tags
 - Auto-fetches titles and descriptions (YouTube, TikTok, and most sites)
 - Card and table view
-- Mark as read/unread, favourite links
+- Mark as read/unread
 - Full-text search
 - Export and import your data as JSON
-- Instagram metadata support via Meta app token
 
 ## Installation (Docker)
 
@@ -76,7 +75,6 @@ The app includes a setup page that generates a QR code for the iOS Shortcut. Ope
 All settings are managed through the Settings page in the app, including:
 
 - **API key** — used to authenticate the iOS Shortcut
-- **Instagram metadata** — optional Meta app token to fetch titles for Instagram links
 - **Metadata refresh** — re-fetch titles and descriptions for all saved links
 
 ## Running without Docker

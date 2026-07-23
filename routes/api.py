@@ -1,8 +1,10 @@
+import re
 import uuid
 import json as _json
 import traceback
 from collections import deque
 from datetime import datetime, timezone
+from pathlib import Path
 import httpx
 from bs4 import BeautifulSoup
 from fastapi import APIRouter, Header, HTTPException, BackgroundTasks, Request, UploadFile, File
@@ -10,7 +12,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, field_validator
 from typing import Any
 
-from db import db, get_setting, set_setting
+from db import db, get_setting, set_setting, NOTES_DIR
 
 router = APIRouter(prefix="/api")
 
@@ -91,8 +93,6 @@ async def _fetch_metadata(link_id: str, url: str):
         favicon = f"https://www.google.com/s2/favicons?domain={domain}&sz=32"
         title = desc = None
 
-        instagram_token = get_setting("instagram_app_token") or ""
-
         async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
 
             # Resolve any short/redirect URLs first so oEmbed gets the canonical URL
@@ -102,17 +102,6 @@ async def _fetch_metadata(link_id: str, url: str):
                 resolved_domain = httpx.URL(resolved_url).host
             except Exception:
                 resolved_url, resolved_domain = url, domain
-
-            # Instagram oEmbed (requires app token)
-            if instagram_token and ("instagram.com" in resolved_domain or "instagr.am" in resolved_domain):
-                oe = await client.get(
-                    "https://graph.facebook.com/v22.0/instagram_oembed",
-                    params={"url": resolved_url, "access_token": instagram_token},
-                    headers=_BROWSER_HEADERS,
-                )
-                if oe.is_success:
-                    data = oe.json()
-                    title = data.get("title") or data.get("author_name")
 
             # oEmbed providers (YouTube, TikTok)
             for provider_domain, oembed_url in _OEMBED_PROVIDERS:
@@ -355,23 +344,12 @@ def uncategorised_count(x_tether_uuid: str | None = Header(default=None)):
     return {"unread_count": unread}
 
 
-@router.get("/links/favourites-count")
-def favourites_count(x_tether_uuid: str | None = Header(default=None)):
-    _check_auth(x_tether_uuid)
-    with db() as conn:
-        unread = conn.execute(
-            "SELECT COUNT(*) FROM links WHERE is_favourite=1 AND read_at IS NULL"
-        ).fetchone()[0]
-    return {"unread_count": unread}
-
-
 @router.get("/links")
 def list_links(
     tag: int | None = None,
     unread: bool | None = None,
     read: bool | None = None,
     uncategorised: bool | None = None,
-    favourites: bool | None = None,
     x_tether_uuid: str | None = Header(default=None),
 ):
     _check_auth(x_tether_uuid)
@@ -382,8 +360,6 @@ def list_links(
             params.append(tag)
         if uncategorised:
             clauses.append("NOT EXISTS (SELECT 1 FROM link_tags lt WHERE lt.link_id=l.id)")
-        if favourites:
-            clauses.append("l.is_favourite=1")
         if unread:
             clauses.append("l.is_read=0")
         elif read:
@@ -412,7 +388,6 @@ def search_links(q: str, x_tether_uuid: str | None = Header(default=None)):
 
 class LinkUpdate(BaseModel):
     is_read: bool | None = None
-    is_favourite: bool | None = None
     tags: list[str] | None = None
     title: str | None = None
     url: str | None = None
@@ -440,8 +415,6 @@ def update_link(
             conn.execute("UPDATE links SET title=? WHERE id=?", (body.title.strip(), link_id))
         if body.url is not None:
             conn.execute("UPDATE links SET url=? WHERE id=?", (body.url.strip(), link_id))
-        if body.is_favourite is not None:
-            conn.execute("UPDATE links SET is_favourite=? WHERE id=?", (int(body.is_favourite), link_id))
         if body.is_read is not None:
             if body.is_read:
                 conn.execute(
@@ -480,7 +453,6 @@ class MarkAllBody(BaseModel):
     is_read: bool
     tag: int | None = None
     uncategorised: bool | None = None
-    favourites: bool | None = None
 
 
 @router.post("/links/mark-all", status_code=204)
@@ -493,8 +465,6 @@ def mark_all_links(body: MarkAllBody, x_tether_uuid: str | None = Header(default
             params.append(body.tag)
         if body.uncategorised:
             clauses.append("NOT EXISTS (SELECT 1 FROM link_tags lt WHERE lt.link_id=links.id)")
-        if body.favourites:
-            clauses.append("is_favourite=1")
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         if body.is_read:
             conn.execute(f"UPDATE links SET is_read=1, read_at=datetime('now') {where}", params)
@@ -540,6 +510,129 @@ def delete_link(link_id: str, x_tether_uuid: str | None = Header(default=None)):
         conn.execute("DELETE FROM links WHERE id=?", (link_id,))
 
 
+# ── Notes ─────────────────────────────────────────────────────────────────────
+
+_UUID_RE = re.compile(r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+
+def _note_path(note_id: str) -> Path:
+    if not _UUID_RE.match(note_id):
+        raise HTTPException(status_code=404)
+    return NOTES_DIR / f"{note_id}.md"
+
+
+_NOTE_SELECT = """
+    SELECT n.id, n.title, n.tag_id, n.created_at, n.updated_at,
+           t.name AS tag_name, t.color AS tag_color
+    FROM notes n
+    LEFT JOIN tags t ON t.id = n.tag_id
+"""
+
+
+def _note_dict(row) -> dict:
+    d = dict(row)
+    tag_name = d.pop("tag_name")
+    tag_color = d.pop("tag_color")
+    tag_id = d["tag_id"]
+    d["tag"] = {"id": tag_id, "name": tag_name, "color": tag_color} if tag_id else None
+    return d
+
+
+@router.get("/notes")
+def list_notes(
+    tag: int | None = None,
+    uncategorised: bool | None = None,
+    x_tether_uuid: str | None = Header(default=None),
+):
+    _check_auth(x_tether_uuid)
+    with db() as conn:
+        clauses, params = [], []
+        if tag is not None:
+            clauses.append("n.tag_id=?")
+            params.append(tag)
+        if uncategorised:
+            clauses.append("n.tag_id IS NULL")
+        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+        rows = conn.execute(
+            f"{_NOTE_SELECT} {where} ORDER BY n.updated_at DESC", params
+        ).fetchall()
+    return [_note_dict(r) for r in rows]
+
+
+class NoteCreate(BaseModel):
+    title: str | None = None
+    tag_id: int | None = None
+
+
+@router.post("/notes", status_code=201)
+def create_note(body: NoteCreate, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    note_id = str(uuid.uuid4())
+    title = (body.title or "Untitled").strip() or "Untitled"
+    (NOTES_DIR / f"{note_id}.md").write_text("", encoding="utf-8")
+    with db() as conn:
+        conn.execute(
+            "INSERT INTO notes(id, title, tag_id) VALUES (?,?,?)",
+            (note_id, title, body.tag_id),
+        )
+        row = conn.execute(f"{_NOTE_SELECT} WHERE n.id=?", (note_id,)).fetchone()
+    return _note_dict(row)
+
+
+@router.get("/notes/{note_id}")
+def get_note(note_id: str, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    path = _note_path(note_id)
+    with db() as conn:
+        row = conn.execute(f"{_NOTE_SELECT} WHERE n.id=?", (note_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404)
+    result = _note_dict(row)
+    result["content"] = path.read_text(encoding="utf-8") if path.exists() else ""
+    return result
+
+
+class NoteUpdate(BaseModel):
+    title: str | None = None
+    content: str | None = None
+    tag_id: int | None = None  # 0 clears the category; omit/None leaves it unchanged
+
+
+@router.patch("/notes/{note_id}")
+def update_note(note_id: str, body: NoteUpdate, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    path = _note_path(note_id)
+    with db() as conn:
+        row = conn.execute("SELECT id FROM notes WHERE id=?", (note_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404)
+        if body.title is not None:
+            conn.execute(
+                "UPDATE notes SET title=?, updated_at=datetime('now') WHERE id=?",
+                (body.title.strip() or "Untitled", note_id),
+            )
+        if body.tag_id is not None:
+            conn.execute(
+                "UPDATE notes SET tag_id=?, updated_at=datetime('now') WHERE id=?",
+                (body.tag_id or None, note_id),
+            )
+        if body.content is not None:
+            path.write_text(body.content, encoding="utf-8")
+            conn.execute("UPDATE notes SET updated_at=datetime('now') WHERE id=?", (note_id,))
+        result = conn.execute(f"{_NOTE_SELECT} WHERE n.id=?", (note_id,)).fetchone()
+    return _note_dict(result)
+
+
+@router.delete("/notes/{note_id}", status_code=204)
+def delete_note(note_id: str, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    with db() as conn:
+        conn.execute("DELETE FROM notes WHERE id=?", (note_id,))
+    path = _note_path(note_id)
+    if path.exists():
+        path.unlink()
+
+
 # ── Settings ──────────────────────────────────────────────────────────────────
 
 class SettingValue(BaseModel):
@@ -553,19 +646,6 @@ def regenerate_uuid(body: SettingValue, x_tether_uuid: str | None = Header(defau
     return {"ok": True}
 
 
-@router.get("/settings/instagram-token")
-def get_instagram_token(x_tether_uuid: str | None = Header(default=None)):
-    _check_auth(x_tether_uuid)
-    return {"value": get_setting("instagram_app_token") or ""}
-
-
-@router.post("/settings/instagram-token", status_code=200)
-def save_instagram_token(body: SettingValue, x_tether_uuid: str | None = Header(default=None)):
-    _check_auth(x_tether_uuid)
-    set_setting("instagram_app_token", body.value.strip())
-    return {"ok": True}
-
-
 # ── Export / Import ───────────────────────────────────────────────────────────
 
 @router.get("/export")
@@ -573,7 +653,7 @@ def export_data(x_tether_uuid: str | None = Header(default=None)):
     _check_auth(x_tether_uuid)
     with db() as conn:
         links = [dict(r) for r in conn.execute(
-            "SELECT id, url, title, description, favicon_url, is_read, is_favourite, created_at, read_at FROM links ORDER BY created_at"
+            "SELECT id, url, title, description, favicon_url, is_read, created_at, read_at FROM links ORDER BY created_at"
         ).fetchall()]
         tags = [dict(r) for r in conn.execute("SELECT id, name, color FROM tags").fetchall()]
         link_tags = [dict(r) for r in conn.execute("SELECT link_id, tag_id FROM link_tags").fetchall()]
@@ -616,9 +696,9 @@ async def import_data(
                 exists = conn.execute("SELECT 1 FROM links WHERE id=?", (link["id"],)).fetchone()
                 if not exists:
                     conn.execute(
-                        "INSERT INTO links(id, url, title, description, favicon_url, is_read, is_favourite, created_at, read_at) VALUES(?,?,?,?,?,?,?,?,?)",
+                        "INSERT INTO links(id, url, title, description, favicon_url, is_read, created_at, read_at) VALUES(?,?,?,?,?,?,?,?)",
                         (link["id"], link["url"], link.get("title"), link.get("description"),
-                         link.get("favicon_url"), link.get("is_read", 0), link.get("is_favourite", 0),
+                         link.get("favicon_url"), link.get("is_read", 0),
                          link.get("created_at"), link.get("read_at")),
                     )
                     imported += 1

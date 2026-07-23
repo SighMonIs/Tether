@@ -4,7 +4,7 @@ import socket
 import plistlib
 import qrcode
 from fastapi import APIRouter, Request
-from fastapi.responses import HTMLResponse, Response, FileResponse
+from fastapi.responses import HTMLResponse, Response, FileResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
@@ -42,6 +42,12 @@ async def home(request: Request):
         "total": total,
         "unread": unread,
     })
+
+
+@router.get("/notes")
+async def notes_redirect(request: Request):
+    qs = f"?{request.url.query}" if request.url.query else ""
+    return RedirectResponse(f"/{qs}")
 
 
 @router.get("/categories", response_class=HTMLResponse)

@@ -1,71 +1,115 @@
 {% extends "base.html" %}
 {% block title %}Home — Tether{% endblock %}
+{% block main_class %}main-content-notes{% endblock %}
 {% block content %}
 <div class="feed">
-  <div class="feed-header">
-    <div class="page-header">
-      <h1>Home</h1>
-      <span class="subtext" id="link-counts">{{ unread }} unread · {{ total }} total</span>
-    </div>
+  <div class="feed-card notes-card">
+    <div class="notes-editor-pane" id="notes-editor-pane">
+        <div class="content-toolbar notes-toolbar" id="notes-toolbar">
+          <div class="view-toggle">
+            <button class="toggle-btn" data-cmd="undo" title="Undo"><i data-lucide="undo-2"></i></button>
+            <button class="toggle-btn" data-cmd="redo" title="Redo"><i data-lucide="redo-2"></i></button>
+          </div>
+          <div class="view-toggle">
+            <button class="toggle-btn" data-cmd="bold" title="Bold"><i data-lucide="bold"></i></button>
+            <button class="toggle-btn" data-cmd="italic" title="Italic"><i data-lucide="italic"></i></button>
+            <button class="toggle-btn" data-cmd="underline" title="Underline"><i data-lucide="underline"></i></button>
+            <button class="toggle-btn" data-cmd="strike" title="Strikethrough"><i data-lucide="strikethrough"></i></button>
+            <button class="toggle-btn" data-cmd="code" title="Inline code"><i data-lucide="code"></i></button>
+          </div>
+          <div class="view-toggle">
+            <button class="toggle-btn" data-cmd="heading1" title="Heading 1"><i data-lucide="heading-1"></i></button>
+            <button class="toggle-btn" data-cmd="heading2" title="Heading 2"><i data-lucide="heading-2"></i></button>
+            <button class="toggle-btn" data-cmd="heading3" title="Heading 3"><i data-lucide="heading-3"></i></button>
+          </div>
+          <div class="view-toggle">
+            <button class="toggle-btn" data-cmd="bulletList" title="Bullet list"><i data-lucide="list"></i></button>
+            <button class="toggle-btn" data-cmd="orderedList" title="Numbered list"><i data-lucide="list-ordered"></i></button>
+            <button class="toggle-btn" data-cmd="taskList" title="Task list"><i data-lucide="list-checks"></i></button>
+          </div>
+          <div class="view-toggle">
+            <button class="toggle-btn" data-cmd="blockquote" title="Quote"><i data-lucide="quote"></i></button>
+            <button class="toggle-btn" data-cmd="codeBlock" title="Code block"><i data-lucide="square-code"></i></button>
+            <button class="toggle-btn" data-cmd="horizontalRule" title="Divider"><i data-lucide="minus"></i></button>
+            <button class="toggle-btn" data-cmd="link" title="Link"><i data-lucide="link"></i></button>
+          </div>
+          <div class="view-toggle">
+            <button class="toggle-btn" id="note-category-btn" title="Change category"><i data-lucide="settings"></i></button>
+          </div>
+          <span class="notes-save-status" id="notes-save-status"></span>
+        </div>
 
-    <div class="filter-row">
-      <div class="filter-bar">
-        <button class="filter-chip active" data-tag="">All</button>
-        <button class="filter-chip" data-unread="true">Unread</button>
-        <button class="filter-chip" data-read="true">Read</button>
-        <button class="filter-chip filter-chip-fav" data-fav="true" title="Favourites"><i data-lucide="star"></i></button>
-      </div>
-      <div class="search-box">
-        <i data-lucide="search"></i>
-        <input type="text" id="search-input" placeholder="Search links…" autocomplete="off">
-      </div>
-      <div class="view-toggle">
-        <button class="toggle-btn" title="Mark all as read" onclick="confirmMarkAll(true)">
-          <i data-lucide="check-check"></i>
-        </button>
-        <button class="toggle-btn" title="Mark all as unread" onclick="confirmMarkAll(false)">
-          <i data-lucide="eye-off"></i>
-        </button>
-      </div>
-      <div class="view-toggle">
-        <button class="toggle-btn active" id="btn-cards" title="Card view" onclick="setView('cards')">
-          <i data-lucide="layout-list"></i>
-        </button>
-        <button class="toggle-btn" id="btn-table" title="Compact view" onclick="setView('table')">
-          <i data-lucide="list"></i>
-        </button>
-      </div>
-    </div>
-  </div>
+        <div class="notes-editor-scroll" id="note-editor-view">
+          <input type="text" id="note-title-input" class="note-title-input" placeholder="Untitled" autocomplete="off">
+          <div id="note-editor" class="note-editor"></div>
+        </div>
 
-  <div class="feed-card">
-    <div class="feed-scroll">
-      <div id="links-container" class="cards-view">
-        <div class="loading-state">Loading…</div>
-      </div>
+        <div class="content-toolbar" id="links-toolbar" style="display:none">
+          <div class="filter-bar">
+            <button class="filter-chip active" data-tag="">All</button>
+            <button class="filter-chip" data-unread="true">Unread</button>
+            <button class="filter-chip" data-read="true">Read</button>
+          </div>
+          <div class="search-box">
+            <i data-lucide="search"></i>
+            <input type="text" id="search-input" placeholder="Search links…" autocomplete="off">
+          </div>
+          <div class="view-toggle">
+            <button class="toggle-btn" title="Mark all as read" onclick="confirmMarkAll(true)">
+              <i data-lucide="check-check"></i>
+            </button>
+            <button class="toggle-btn" title="Mark all as unread" onclick="confirmMarkAll(false)">
+              <i data-lucide="eye-off"></i>
+            </button>
+          </div>
+          <div class="view-toggle">
+            <button class="toggle-btn active" id="btn-cards" title="Card view" onclick="setView('cards')">
+              <i data-lucide="layout-list"></i>
+            </button>
+            <button class="toggle-btn" id="btn-table" title="Compact view" onclick="setView('table')">
+              <i data-lucide="list"></i>
+            </button>
+          </div>
+        </div>
+        <div class="feed-scroll" id="links-view" style="display:none">
+          <div id="links-container" class="cards-view">
+            <div class="loading-state">Loading…</div>
+          </div>
 
-      <table id="links-table" class="links-table hidden">
-        <colgroup>
-          <col style="width:36px">
-          <col>
-          <col style="width:180px">
-          <col style="width:85px">
-          <col style="width:160px">
-        </colgroup>
-        <thead>
-          <tr>
-            <th></th>
-            <th>Title / URL</th>
-            <th>Tags</th>
-            <th>Saved</th>
-            <th></th>
-          </tr>
-        </thead>
-        <tbody></tbody>
-      </table>
-    </div>
+          <table id="links-table" class="links-table hidden">
+            <colgroup>
+              <col style="width:36px">
+              <col>
+              <col style="width:180px">
+              <col style="width:85px">
+              <col style="width:160px">
+            </colgroup>
+            <thead>
+              <tr>
+                <th></th>
+                <th>Title / URL</th>
+                <th>Tags</th>
+                <th>Saved</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
   </div>
 </div><!-- /.feed -->
+
+<script>
+  if (localStorage.getItem("activeTab") === "links") {
+    document.getElementById("notes-toolbar").style.display = "none";
+    document.getElementById("note-editor-view").style.display = "none";
+    document.getElementById("links-toolbar").style.display = "";
+    document.getElementById("links-view").style.display = "";
+    document.getElementById("tab-links-btn").classList.add("active");
+    document.getElementById("tab-notes-btn").classList.remove("active");
+  }
+</script>
 
 <template id="card-template">
   <article class="link-card" data-id="">
@@ -129,12 +173,6 @@
           <button type="button" onclick="addNewEditTags()">Add</button>
         </div>
       </div>
-      <div class="form-group form-group-inline">
-        <label>
-          <input type="checkbox" id="edit-favourite">
-          Favourite
-        </label>
-      </div>
       <div class="modal-actions">
         <button type="button" class="btn-ghost" onclick="document.getElementById('edit-modal').close()">Cancel</button>
         <button type="button" class="btn-ghost" id="edit-refresh-btn" onclick="refreshLinkMetadata()">
@@ -146,4 +184,25 @@
     </form>
   </div>
 </dialog>
+
+<dialog id="note-category-modal" class="modal">
+  <div class="modal-content">
+    <h2>Change category</h2>
+    <form id="note-category-form">
+      <div class="form-group">
+        <label for="note-category-select">Category</label>
+        <select id="note-category-select" class="edit-tag-select">
+          <option value="0">No category</option>
+        </select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" onclick="document.getElementById('note-category-modal').close()">Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+{% endblock %}
+{% block scripts %}
+<script type="module" src="/static/notes.js?v=016"></script>
 {% endblock %}

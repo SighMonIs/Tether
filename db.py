@@ -6,6 +6,7 @@ from contextlib import contextmanager
 
 _data_dir = Path(os.environ.get("TETHER_DATA", Path(__file__).parent))
 DB_PATH = _data_dir / "tether.db"
+NOTES_DIR = _data_dir / "notes"
 
 
 def get_conn():
@@ -50,7 +51,6 @@ def init_db():
                 description  TEXT,
                 favicon_url  TEXT,
                 is_read      INTEGER NOT NULL DEFAULT 0,
-                is_favourite INTEGER NOT NULL DEFAULT 0,
                 created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
                 read_at      TEXT
             );
@@ -86,12 +86,22 @@ def init_db():
                 INSERT INTO links_fts(links_fts, rowid, id, url, title, description)
                 VALUES ('delete', old.rowid, old.id, old.url, old.title, old.description);
             END;
+
+            CREATE TABLE IF NOT EXISTS notes (
+                id         TEXT PRIMARY KEY,
+                title      TEXT NOT NULL DEFAULT 'Untitled',
+                tag_id     INTEGER REFERENCES tags(id) ON DELETE SET NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
         """)
 
         # Migrations for existing databases
-        cols = {r[1] for r in conn.execute("PRAGMA table_info(links)")}
-        if "is_favourite" not in cols:
-            conn.execute("ALTER TABLE links ADD COLUMN is_favourite INTEGER NOT NULL DEFAULT 0")
+        note_cols = {r[1] for r in conn.execute("PRAGMA table_info(notes)")}
+        if "tag_id" not in note_cols:
+            conn.execute("ALTER TABLE notes ADD COLUMN tag_id INTEGER REFERENCES tags(id) ON DELETE SET NULL")
+
+        NOTES_DIR.mkdir(parents=True, exist_ok=True)
 
         # Generate UUID on first run
         existing = conn.execute("SELECT value FROM settings WHERE key='uuid'").fetchone()

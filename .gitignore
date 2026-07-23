@@ -3,3 +3,6 @@ __pycache__/
 *.pyo
 *.db
 .env
+notes/
+
+.claude/

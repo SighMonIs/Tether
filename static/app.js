@@ -20,13 +20,49 @@ function showConfirm(message, okLabel = "Delete") {
   });
 }
 
+const savedSidebarWidth = localStorage.getItem("sidebarWidth");
+if (savedSidebarWidth) {
+  document.documentElement.style.setProperty("--sidebar-w", `${savedSidebarWidth}px`);
+}
+
+/* ── Sidebar resize ──────────────────────────────────────── */
+function initSidebarResize() {
+  const handle = document.getElementById("sidebar-resize-handle");
+  if (!handle) return;
+  const MIN_WIDTH = 220;
+  const MAX_WIDTH = 500;
+
+  handle.addEventListener("mousedown", e => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startWidth = document.querySelector(".sidebar").offsetWidth;
+    handle.classList.add("dragging");
+    document.body.style.cursor = "col-resize";
+    document.body.style.userSelect = "none";
+
+    function onMouseMove(ev) {
+      const width = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, startWidth + (ev.clientX - startX)));
+      document.documentElement.style.setProperty("--sidebar-w", `${width}px`);
+    }
+    function onMouseUp() {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      handle.classList.remove("dragging");
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      localStorage.setItem("sidebarWidth", document.querySelector(".sidebar").offsetWidth);
+    }
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  });
+}
+
 /* global state */
 let currentView = localStorage.getItem("view") || "cards";
 let currentTag = null;
 let currentUnread = null;
 let currentRead = null;
 let currentUncat = null;
-let currentFav = null;
 let searchTimeout = null;
 
 const UUID_HEADER = () => {
@@ -69,7 +105,6 @@ async function fetchLinks(tag, unread, read, uncat, query) {
     if (unread) params.set("unread", "true");
     if (read) params.set("read", "true");
     if (uncat) params.set("uncategorised", "true");
-    if (currentFav) params.set("favourites", "true");
     if (params.size) url += "?" + params.toString();
   }
   const res = await fetch(url, { headers: headers() });
@@ -149,9 +184,6 @@ function renderCards(links) {
         <a class="card-title" href="${escHtml(link.url)}" target="_blank" rel="noopener">
           ${escHtml(link.title || getDomain(link.url))}
         </a>
-        <button class="icon-btn fav-btn ${link.is_favourite ? "is-fav" : ""}" title="${link.is_favourite ? "Unfavourite" : "Favourite"}" onclick="toggleFavourite('${link.id}', ${!link.is_favourite})">
-          <i data-lucide="star"></i>
-        </button>
         <button class="icon-btn read-btn ${link.is_read ? "is-read" : ""}" title="${link.is_read ? "Mark unread" : "Mark as read"}" onclick="toggleRead('${link.id}', ${!link.is_read})">
           <i data-lucide="${link.is_read ? "check" : "eye"}"></i>
         </button>
@@ -198,9 +230,6 @@ function renderTable(links) {
       <td class="row-tags">${tagPills(link.tags)}</td>
       <td class="row-date">${friendlyDate(link.created_at)}</td>
       <td class="row-actions">
-        <button class="row-fav-btn ${link.is_favourite ? "is-fav" : ""}" title="${link.is_favourite ? "Unfavourite" : "Favourite"}" onclick="toggleFavourite('${link.id}', ${!link.is_favourite})">
-          <i data-lucide="star"></i>
-        </button>
         <button class="row-read-btn ${link.is_read ? "is-read" : ""}" title="${link.is_read ? "Mark unread" : "Mark as read"}" onclick="toggleRead('${link.id}', ${!link.is_read})">
           <i data-lucide="${link.is_read ? "check" : "eye"}"></i>
         </button>
@@ -243,17 +272,6 @@ async function toggleRead(id, isRead) {
   toast(isRead ? "Marked as read" : "Marked as unread");
 }
 
-async function toggleFavourite(id, isFav) {
-  await fetch(`/api/links/${id}`, {
-    method: "PATCH",
-    headers: headers(),
-    body: JSON.stringify({ is_favourite: isFav }),
-  });
-  await loadLinks();
-  loadSidebarCats();
-  toast(isFav ? "Added to Favourites" : "Removed from Favourites");
-}
-
 async function confirmMarkAll(isRead) {
   const label = isRead ? "Mark all as read" : "Mark all as unread";
   const msg = isRead
@@ -263,7 +281,6 @@ async function confirmMarkAll(isRead) {
   const body = {};
   if (currentTag) body.tag = parseInt(currentTag);
   if (currentUncat) body.uncategorised = true;
-  if (currentFav) body.favourites = true;
   body.is_read = isRead;
   await fetch("/api/links/mark-all", {
     method: "POST",
@@ -289,7 +306,6 @@ function initFilters() {
       chip.classList.add("active");
       currentUnread = chip.dataset.unread ? true : null;
       currentRead = chip.dataset.read ? true : null;
-      currentFav = chip.dataset.fav ? true : null;
       loadLinks();
       updateCounts();
     });
@@ -515,51 +531,6 @@ async function regenerateKey() {
   document.getElementById("regen-modal")?.close();
 }
 
-/* ── Instagram token ─────────────────────────────────────── */
-
-function toggleInstagramToken() {
-  const input = document.getElementById("instagram-token-input");
-  if (!input) return;
-  input.type = input.type === "password" ? "text" : "password";
-}
-
-async function saveInstagramToken() {
-  const val = document.getElementById("instagram-token-input")?.value.trim();
-  const hint = document.getElementById("instagram-token-hint");
-  if (!val) { hint.textContent = "Please enter a token first."; return; }
-  const res = await fetch("/api/settings/instagram-token", {
-    method: "POST", headers: headers(), body: JSON.stringify({ value: val }),
-  });
-  if (res.ok) {
-    hint.textContent = "Token saved.";
-    toast("Instagram token saved");
-  } else {
-    hint.textContent = "Failed to save.";
-  }
-}
-
-async function clearInstagramToken() {
-  await fetch("/api/settings/instagram-token", {
-    method: "POST", headers: headers(), body: JSON.stringify({ value: "" }),
-  });
-  const input = document.getElementById("instagram-token-input");
-  if (input) input.value = "";
-  const hint = document.getElementById("instagram-token-hint");
-  if (hint) hint.textContent = "Token cleared.";
-  toast("Instagram token cleared");
-}
-
-async function loadInstagramToken() {
-  const input = document.getElementById("instagram-token-input");
-  if (!input) return;
-  const data = await fetch("/api/settings/instagram-token", { headers: headers() }).then(r => r.json());
-  if (data.value) {
-    input.value = data.value;
-    const hint = document.getElementById("instagram-token-hint");
-    if (hint) hint.textContent = "A token is saved.";
-  }
-}
-
 /* ── Add link modal ──────────────────────────────────────── */
 let _addLinkTags  = []; // [{name, color}]
 let _importTags   = []; // [{name, color}]
@@ -744,8 +715,6 @@ async function editLink(id) {
   document.getElementById("edit-new-tag-row").style.display = "none";
   document.getElementById("edit-new-tag").value = "";
   renderEditTags();
-  const favCb = document.getElementById("edit-favourite");
-  if (favCb) favCb.checked = !!link.is_favourite;
   document.getElementById("edit-modal").showModal();
   setTimeout(() => document.getElementById("edit-title").focus(), 50);
 }
@@ -896,7 +865,7 @@ async function saveLink(e) {
   const res = await fetch(`/api/links/${id}`, {
     method: "PATCH",
     headers: headers(),
-    body: JSON.stringify({ title, url, tags: _editTags.map(t => t.name), is_favourite: document.getElementById("edit-favourite")?.checked ?? false }),
+    body: JSON.stringify({ title, url, tags: _editTags.map(t => t.name) }),
   });
   if (res.ok) {
     document.getElementById("edit-modal").close();
@@ -912,22 +881,13 @@ async function loadSidebarCats() {
   const ul = document.getElementById("sidebar-cats");
   if (!ul) return;
   try {
-    const [tagsRes, uncatRes, favRes] = await Promise.all([
+    const [tagsRes, uncatRes] = await Promise.all([
       fetch("/api/tags", { headers: headers() }),
       fetch("/api/links/uncategorised-count", { headers: headers() }),
-      fetch("/api/links/favourites-count", { headers: headers() }),
     ]);
     if (!tagsRes.ok) return;
     const tags = await tagsRes.json();
     const { unread_count: uncatUnread } = uncatRes.ok ? await uncatRes.json() : { unread_count: 0 };
-    const { unread_count: favUnread } = favRes.ok ? await favRes.json() : { unread_count: 0 };
-
-    // update static Favourites badge
-    const favBadge = document.getElementById("sidebar-fav-badge");
-    if (favBadge) {
-      if (favUnread > 0) { favBadge.textContent = favUnread; favBadge.style.display = ""; }
-      else { favBadge.style.display = "none"; }
-    }
 
     const params = new URLSearchParams(location.search);
     const activeTag = params.get("tag");
@@ -958,8 +918,6 @@ async function loadSidebarCats() {
 }
 
 function setPageTitle(title) {
-  const h1 = document.querySelector(".page-header h1");
-  if (h1) h1.textContent = title;
   document.title = `${title} — Tether`;
 }
 
@@ -968,13 +926,13 @@ document.addEventListener("DOMContentLoaded", () => {
   lucide.createIcons();
   setView(currentView);
   loadSidebarCats();
+  initSidebarResize();
 
   if (document.getElementById("links-container")) {
     // activate filter from URL param
     const urlParams = new URLSearchParams(location.search);
     const tagParam = urlParams.get("tag");
     const uncatParam = urlParams.get("uncategorised");
-    const favParam = urlParams.get("favourites");
     if (tagParam) {
       currentTag = tagParam;
       document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
@@ -991,17 +949,11 @@ document.addEventListener("DOMContentLoaded", () => {
       document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
       document.querySelector(".filter-chip[data-tag='']")?.classList.add("active");
       setPageTitle("Untagged");
-    } else if (favParam === "true") {
-      currentFav = true;
-      document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
-      document.querySelector(".filter-chip[data-tag='']")?.classList.add("active");
-      setPageTitle("Favourites");
     }
     initFilters();
     initSearch();
     loadLinks();
     updateCounts();
   }
-  loadInstagramToken();
   loadErrorLog();
 });
