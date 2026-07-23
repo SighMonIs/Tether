@@ -187,6 +187,9 @@ function renderCards(links) {
         <button class="icon-btn read-btn ${link.is_read ? "is-read" : ""}" title="${link.is_read ? "Mark unread" : "Mark as read"}" onclick="toggleRead('${link.id}', ${!link.is_read})">
           <i data-lucide="${link.is_read ? "check" : "eye"}"></i>
         </button>
+        <button class="icon-btn note-btn" title="Add note" onclick="addNoteFromLink('${link.id}')">
+          <i data-lucide="file-text"></i>
+        </button>
         <button class="icon-btn edit-btn" title="Edit" onclick="editLink('${link.id}')">
           <i data-lucide="square-pen"></i>
         </button>
@@ -232,6 +235,9 @@ function renderTable(links) {
       <td class="row-actions">
         <button class="row-read-btn ${link.is_read ? "is-read" : ""}" title="${link.is_read ? "Mark unread" : "Mark as read"}" onclick="toggleRead('${link.id}', ${!link.is_read})">
           <i data-lucide="${link.is_read ? "check" : "eye"}"></i>
+        </button>
+        <button class="row-icon-btn" title="Add note" onclick="addNoteFromLink('${link.id}')">
+          <i data-lucide="file-text"></i>
         </button>
         <button class="row-icon-btn" title="Edit" onclick="editLink('${link.id}')">
           <i data-lucide="square-pen"></i>
@@ -679,6 +685,14 @@ async function submitAddLink(e) {
       setTimeout(() => window.location.href = "/", 400);
     }
   }
+}
+
+/* ── Add note from link ──────────────────────────────────── */
+async function addNoteFromLink(id) {
+  const res = await fetch(`/api/links/${id}`, { headers: headers() });
+  if (!res.ok) return;
+  const link = await res.json();
+  await window.createNoteFromLink(link.title || getDomain(link.url), link.url);
 }
 
 /* ── Edit modal ──────────────────────────────────────────── */

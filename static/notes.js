@@ -187,7 +187,7 @@ async function loadTags() {
     const tag = allTags.find(t => t.id === filterTagId);
     if (tag) {
       window.setPageTitle?.(tag.name);
-      categoryLabel.textContent = tag.name;
+      categoryLabel.innerHTML = `<span class="sidebar-cat-dot" style="background:${escHtml(tag.color)}"></span>${escHtml(tag.name)}`;
     }
   } else if (filterUncategorised) {
     window.setPageTitle?.("Untagged");
@@ -289,6 +289,24 @@ async function createNote() {
   await openNote(note.id);
   titleInput.focus();
 }
+
+window.createNoteFromLink = async function(title, url) {
+  const res = await fetch("/api/notes", {
+    method: "POST",
+    headers: authHeaders(),
+    body: JSON.stringify({ title, tag_id: filterTagId }),
+  });
+  if (!res.ok) return;
+  const note = await res.json();
+  await fetch(`/api/notes/${note.id}`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify({ content: `${url}\n\n` }),
+  });
+  notesCache.unshift(note);
+  currentNoteId = null;
+  await openNote(note.id);
+};
 
 async function deleteNote(id) {
   const ok = await window.showConfirm("Delete this note? This cannot be undone.");

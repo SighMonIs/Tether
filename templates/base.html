@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Tether{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="stylesheet" href="/static/style.css?v=057">
+  <link rel="stylesheet" href="/static/style.css?v=059">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <meta name="tether-uuid" content="{{ tether_uuid | default('') }}">
 </head>
@@ -33,7 +33,7 @@
     </div>
 
     <button class="sidebar-category-trigger" id="sidebar-category-trigger">
-      <span id="sidebar-category-label">Home</span>
+      <span id="sidebar-category-label"><i data-lucide="home" class="sidebar-cat-star"></i>Home</span>
       <i data-lucide="chevron-down"></i>
     </button>
 
@@ -142,7 +142,7 @@
     </button>
   </div>
 
-  <script src="/static/app.js?v=035"></script>
+  <script src="/static/app.js?v=036"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
