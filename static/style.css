@@ -381,7 +381,7 @@ h1 { font-size: 1.6rem; font-weight: 700; }
   border-radius: var(--radius);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
   padding: 0.35rem;
-  max-height: 45vh;
+  max-height: 85vh;
   overflow: hidden;
 }
 .sidebar-notes-nav,

@@ -414,12 +414,17 @@ async function loadNotes() {
   if (filterUncategorised) qs.set("uncategorised", "true");
   const res = await fetch(`/api/notes${qs.toString() ? "?" + qs : ""}`, { headers: authHeaders(false) });
   notesCache = res.ok ? await res.json() : [];
-  if (!notesCache.length) {
-    await createNote();
-    return;
-  }
   renderList();
-  await openNote(notesCache[0].id, false);
+  if (notesCache.length) {
+    await openNote(notesCache[0].id, false);
+  } else {
+    currentNoteId = null;
+    suppressDirty = true;
+    titleInput.value = "";
+    editor.commands.setContent("");
+    setTimeout(() => { suppressDirty = false; }, 0);
+    statusEl.textContent = "";
+  }
 }
 
 (async () => {
