@@ -1,5 +1,7 @@
 import re
+import io
 import uuid
+import zipfile
 import json as _json
 import traceback
 from collections import deque
@@ -242,6 +244,48 @@ def delete_tag(tag_id: int, x_tether_uuid: str | None = Header(default=None)):
         conn.execute("DELETE FROM tags WHERE id=?", (tag_id,))
 
 
+class TagReassign(BaseModel):
+    to_tag_id: int | None = None
+
+
+@router.post("/tags/{tag_id}/reassign", status_code=204)
+def reassign_tag(tag_id: int, body: TagReassign, x_tether_uuid: str | None = Header(default=None)):
+    """Move every link/note off this tag (to another tag, or uncategorised) then delete it."""
+    _check_auth(x_tether_uuid)
+    with db() as conn:
+        if body.to_tag_id is not None:
+            link_ids = [r["link_id"] for r in conn.execute(
+                "SELECT link_id FROM link_tags WHERE tag_id=?", (tag_id,)
+            ).fetchall()]
+            for link_id in link_ids:
+                conn.execute(
+                    "INSERT OR IGNORE INTO link_tags(link_id, tag_id) VALUES (?,?)",
+                    (link_id, body.to_tag_id),
+                )
+            conn.execute("UPDATE notes SET tag_id=? WHERE tag_id=?", (body.to_tag_id, tag_id))
+        # deleting the tag cascades: link_tags rows for it are removed (CASCADE),
+        # and any notes still pointing at it are uncategorised (SET NULL)
+        conn.execute("DELETE FROM tags WHERE id=?", (tag_id,))
+
+
+@router.delete("/tags/{tag_id}/purge", status_code=204)
+def purge_tag(tag_id: int, x_tether_uuid: str | None = Header(default=None)):
+    """Delete every link and note tagged with this category, then the category itself."""
+    _check_auth(x_tether_uuid)
+    with db() as conn:
+        note_ids = [r["id"] for r in conn.execute("SELECT id FROM notes WHERE tag_id=?", (tag_id,)).fetchall()]
+        link_ids = [r["link_id"] for r in conn.execute("SELECT link_id FROM link_tags WHERE tag_id=?", (tag_id,)).fetchall()]
+        for note_id in note_ids:
+            conn.execute("DELETE FROM notes WHERE id=?", (note_id,))
+        for link_id in link_ids:
+            conn.execute("DELETE FROM links WHERE id=?", (link_id,))
+        conn.execute("DELETE FROM tags WHERE id=?", (tag_id,))
+    for note_id in note_ids:
+        path = NOTES_DIR / f"{note_id}.md"
+        if path.exists():
+            path.unlink()
+
+
 # ── Links ─────────────────────────────────────────────────────────────────────
 
 class LinkCreate(BaseModel):
@@ -329,6 +373,8 @@ def _link_rows(conn, rows):
             (link["id"],)
         ).fetchall()
         link["tags"] = [dict(t) for t in tags]
+        note = conn.execute("SELECT id FROM notes WHERE link_id=?", (link["id"],)).fetchone()
+        link["note_id"] = note["id"] if note else None
         result.append(link)
     return result
 
@@ -522,7 +568,7 @@ def _note_path(note_id: str) -> Path:
 
 
 _NOTE_SELECT = """
-    SELECT n.id, n.title, n.tag_id, n.created_at, n.updated_at,
+    SELECT n.id, n.title, n.tag_id, n.link_id, n.created_at, n.updated_at,
            t.name AS tag_name, t.color AS tag_color
     FROM notes n
     LEFT JOIN tags t ON t.id = n.tag_id
@@ -554,7 +600,7 @@ def list_notes(
             clauses.append("n.tag_id IS NULL")
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         rows = conn.execute(
-            f"{_NOTE_SELECT} {where} ORDER BY n.updated_at DESC", params
+            f"{_NOTE_SELECT} {where} ORDER BY n.position ASC", params
         ).fetchall()
     return [_note_dict(r) for r in rows]
 
@@ -562,6 +608,7 @@ def list_notes(
 class NoteCreate(BaseModel):
     title: str | None = None
     tag_id: int | None = None
+    link_id: str | None = None
 
 
 @router.post("/notes", status_code=201)
@@ -571,12 +618,28 @@ def create_note(body: NoteCreate, x_tether_uuid: str | None = Header(default=Non
     title = (body.title or "Untitled").strip() or "Untitled"
     (NOTES_DIR / f"{note_id}.md").write_text("", encoding="utf-8")
     with db() as conn:
+        min_pos = conn.execute("SELECT MIN(position) FROM notes").fetchone()[0]
+        position = (min_pos - 1) if min_pos is not None else 0
         conn.execute(
-            "INSERT INTO notes(id, title, tag_id) VALUES (?,?,?)",
-            (note_id, title, body.tag_id),
+            "INSERT INTO notes(id, title, tag_id, link_id, position) VALUES (?,?,?,?,?)",
+            (note_id, title, body.tag_id, body.link_id, position),
         )
         row = conn.execute(f"{_NOTE_SELECT} WHERE n.id=?", (note_id,)).fetchone()
     return _note_dict(row)
+
+
+class NoteReorder(BaseModel):
+    order: list[str]
+
+
+@router.patch("/notes/reorder", status_code=204)
+def reorder_notes(body: NoteReorder, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    with db() as conn:
+        conn.executemany(
+            "UPDATE notes SET position=? WHERE id=?",
+            [(i, note_id) for i, note_id in enumerate(body.order)],
+        )
 
 
 @router.get("/notes/{note_id}")
@@ -648,21 +711,80 @@ def regenerate_uuid(body: SettingValue, x_tether_uuid: str | None = Header(defau
 
 # ── Export / Import ───────────────────────────────────────────────────────────
 
-@router.get("/export")
-def export_data(x_tether_uuid: str | None = Header(default=None)):
-    _check_auth(x_tether_uuid)
-    with db() as conn:
+def _links_export_payload(conn, tag: int | None = None) -> dict:
+    if tag is not None:
+        links = [dict(r) for r in conn.execute(
+            "SELECT l.id, l.url, l.title, l.description, l.favicon_url, l.is_read, l.created_at, l.read_at "
+            "FROM links l JOIN link_tags lt ON lt.link_id=l.id WHERE lt.tag_id=? ORDER BY l.created_at",
+            (tag,)
+        ).fetchall()]
+        tags = [dict(r) for r in conn.execute("SELECT id, name, color FROM tags WHERE id=?", (tag,)).fetchall()]
+        link_tags = [dict(r) for r in conn.execute(
+            "SELECT link_id, tag_id FROM link_tags WHERE tag_id=?", (tag,)
+        ).fetchall()]
+    else:
         links = [dict(r) for r in conn.execute(
             "SELECT id, url, title, description, favicon_url, is_read, created_at, read_at FROM links ORDER BY created_at"
         ).fetchall()]
         tags = [dict(r) for r in conn.execute("SELECT id, name, color FROM tags").fetchall()]
         link_tags = [dict(r) for r in conn.execute("SELECT link_id, tag_id FROM link_tags").fetchall()]
+    return {"version": 1, "links": links, "tags": tags, "link_tags": link_tags}
 
-    payload = _json.dumps({"version": 1, "links": links, "tags": tags, "link_tags": link_tags}, indent=2)
+
+def _note_export_filename(title: str, note_id: str) -> str:
+    name = re.sub(r"[^\w\s-]", "", title or "Untitled").strip()
+    name = re.sub(r"\s+", "-", name)[:60] or "Untitled"
+    return f"{name}-{note_id[:8]}.md"
+
+
+def _write_notes_to_zip(zf: zipfile.ZipFile, conn, prefix: str = "", tag: int | None = None):
+    query = "SELECT id, title FROM notes"
+    params = ()
+    if tag is not None:
+        query += " WHERE tag_id=?"
+        params = (tag,)
+    for n in conn.execute(query, params).fetchall():
+        path = NOTES_DIR / f"{n['id']}.md"
+        content = path.read_text(encoding="utf-8") if path.exists() else ""
+        zf.writestr(f"{prefix}{_note_export_filename(n['title'], n['id'])}", content)
+
+
+@router.get("/export")
+def export_data(tag: int | None = None, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    with db() as conn:
+        payload = _json.dumps(_links_export_payload(conn, tag), indent=2)
     return Response(
         content=payload,
         media_type="application/json",
         headers={"Content-Disposition": "attachment; filename=tether-export.json"},
+    )
+
+
+@router.get("/export/notes")
+def export_notes(tag: int | None = None, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    buf = io.BytesIO()
+    with db() as conn, zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        _write_notes_to_zip(zf, conn, tag=tag)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=tether-notes.zip"},
+    )
+
+
+@router.get("/export/all")
+def export_all(tag: int | None = None, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    buf = io.BytesIO()
+    with db() as conn, zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("links.json", _json.dumps(_links_export_payload(conn, tag), indent=2))
+        _write_notes_to_zip(zf, conn, prefix="notes/", tag=tag)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/zip",
+        headers={"Content-Disposition": "attachment; filename=tether-export.zip"},
     )
 
 

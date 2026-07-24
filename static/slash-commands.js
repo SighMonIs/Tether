@@ -2,7 +2,6 @@ import { Extension, textblockTypeInputRule, wrappingInputRule, nodeInputRule } f
 import Suggestion from "https://esm.sh/@tiptap/suggestion@2.27.2?deps=@tiptap/core@2.27.2";
 
 const ITEMS = [
-  { id: "paragraph", command: "/text", keywords: ["text", "paragraph", "p"], icon: "pilcrow", rule: { kind: "textblock", type: "paragraph" } },
   { id: "heading1", command: "/heading1", keywords: ["h1", "heading1", "title"], icon: "heading-1", rule: { kind: "textblock", type: "heading", attrs: { level: 1 } } },
   { id: "heading2", command: "/heading2", keywords: ["h2", "heading2", "subtitle"], icon: "heading-2", rule: { kind: "textblock", type: "heading", attrs: { level: 2 } } },
   { id: "heading3", command: "/heading3", keywords: ["h3", "heading3"], icon: "heading-3", rule: { kind: "textblock", type: "heading", attrs: { level: 3 } } },
@@ -12,6 +11,12 @@ const ITEMS = [
   { id: "blockquote", command: "/quote", keywords: ["quote", "blockquote"], icon: "quote", rule: { kind: "wrapping", type: "blockquote" } },
   { id: "codeBlock", command: "/code", keywords: ["code", "codeblock", "pre"], icon: "square-code", rule: { kind: "textblock", type: "codeBlock" } },
   { id: "horizontalRule", command: "/divider", keywords: ["divider", "hr", "rule", "line"], icon: "minus", rule: { kind: "node", type: "horizontalRule" } },
+  { id: "bold", command: "/bold", keywords: ["bold", "b", "strong"], icon: "bold" },
+  { id: "italic", command: "/italic", keywords: ["italic", "i", "em"], icon: "italic" },
+  { id: "underline", command: "/underline", keywords: ["underline", "u"], icon: "underline" },
+  { id: "strike", command: "/strikethrough", keywords: ["strike", "strikethrough", "s"], icon: "strikethrough" },
+  { id: "code", command: "/inlinecode", keywords: ["code", "inline", "inlinecode"], icon: "code" },
+  { id: "link", command: "/link", keywords: ["link", "url", "hyperlink"], icon: "link" },
 ];
 
 class SlashMenu {
@@ -73,7 +78,7 @@ class SlashMenu {
 }
 
 function buildInputRules(commandsMap, editor) {
-  return ITEMS.map(item => {
+  return ITEMS.filter(item => item.rule).map(item => {
     const nodeType = editor.schema.nodes[item.rule.type];
     if (!nodeType) return null;
     const find = new RegExp(`^${item.command}\\s$`, "i");

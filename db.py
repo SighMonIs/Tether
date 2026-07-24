@@ -91,6 +91,8 @@ def init_db():
                 id         TEXT PRIMARY KEY,
                 title      TEXT NOT NULL DEFAULT 'Untitled',
                 tag_id     INTEGER REFERENCES tags(id) ON DELETE SET NULL,
+                link_id    TEXT REFERENCES links(id) ON DELETE SET NULL,
+                position   INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
@@ -100,6 +102,15 @@ def init_db():
         note_cols = {r[1] for r in conn.execute("PRAGMA table_info(notes)")}
         if "tag_id" not in note_cols:
             conn.execute("ALTER TABLE notes ADD COLUMN tag_id INTEGER REFERENCES tags(id) ON DELETE SET NULL")
+        if "link_id" not in note_cols:
+            conn.execute("ALTER TABLE notes ADD COLUMN link_id TEXT REFERENCES links(id) ON DELETE SET NULL")
+        if "position" not in note_cols:
+            conn.execute("ALTER TABLE notes ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+            rows = conn.execute("SELECT id FROM notes ORDER BY updated_at DESC").fetchall()
+            conn.executemany(
+                "UPDATE notes SET position=? WHERE id=?",
+                [(i, r["id"]) for i, r in enumerate(rows)],
+            )
 
         NOTES_DIR.mkdir(parents=True, exist_ok=True)
 

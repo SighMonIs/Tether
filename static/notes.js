@@ -6,7 +6,7 @@ import TaskList from "https://esm.sh/@tiptap/extension-task-list@2.27.2?deps=@ti
 import TaskItem from "https://esm.sh/@tiptap/extension-task-item@2.27.2?deps=@tiptap/core@2.27.2";
 import Placeholder from "https://esm.sh/@tiptap/extension-placeholder@2.27.2?deps=@tiptap/core@2.27.2";
 import { Markdown } from "https://esm.sh/tiptap-markdown@0.9.0?deps=@tiptap/core@2.27.2";
-import { createSlashCommand } from "/static/slash-commands.js";
+import { createSlashCommand } from "/static/slash-commands.js?v=003";
 
 const uuidMeta = document.querySelector('meta[name="tether-uuid"]');
 const TETHER_UUID = uuidMeta ? uuidMeta.content : "";
@@ -32,23 +32,26 @@ const categorySelect = document.getElementById("note-category-select");
 const categoryForm = document.getElementById("note-category-form");
 
 const linksTabBtn = document.getElementById("tab-links-btn");
-const notesTabBtn = document.getElementById("tab-notes-btn");
 const noteView = document.getElementById("note-editor-view");
 const linksToolbar = document.getElementById("links-toolbar");
 const linksView = document.getElementById("links-view");
 
+const toolbarHidden = localStorage.getItem("notesToolbarHidden") === "1";
+
 function setShowingLinks(on, persist = true) {
-  toolbarEl.style.display = on ? "none" : "";
+  toolbarEl.style.display = (on || toolbarHidden) ? "none" : "";
   noteView.style.display = on ? "none" : "";
   linksToolbar.style.display = on ? "" : "none";
   linksView.style.display = on ? "" : "none";
   linksTabBtn.classList.toggle("active", on);
-  notesTabBtn.classList.toggle("active", !on);
+  listEl.querySelectorAll(".notes-list-item").forEach(el => {
+    el.classList.toggle("active", !on && el.dataset.id === String(currentNoteId));
+  });
   if (persist) localStorage.setItem("activeTab", on ? "links" : "notes");
 }
 
+if (toolbarHidden) toolbarEl.style.display = "none";
 linksTabBtn.addEventListener("click", () => setShowingLinks(true));
-notesTabBtn.addEventListener("click", () => setShowingLinks(false));
 
 if (localStorage.getItem("activeTab") === "links") setShowingLinks(true, false);
 
@@ -57,7 +60,6 @@ const filterTagId = urlParams.get("tag") ? Number(urlParams.get("tag")) : null;
 const filterUncategorised = urlParams.get("uncategorised") === "true";
 
 const sidebarTagsNav = document.getElementById("sidebar-tags-nav");
-const sidebarNotesNav = document.getElementById("sidebar-notes-nav");
 const categoryTrigger = document.getElementById("sidebar-category-trigger");
 const categoryLabel = document.getElementById("sidebar-category-label");
 let showingTagsPanel = false;
@@ -65,13 +67,21 @@ let showingTagsPanel = false;
 categoryTrigger.addEventListener("click", () => {
   showingTagsPanel = !showingTagsPanel;
   sidebarTagsNav.style.display = showingTagsPanel ? "" : "none";
-  sidebarNotesNav.style.display = showingTagsPanel ? "none" : "";
   categoryTrigger.classList.toggle("open", showingTagsPanel);
+});
+
+document.addEventListener("click", ev => {
+  if (!showingTagsPanel) return;
+  if (ev.target.closest(".sidebar-category-wrap")) return;
+  showingTagsPanel = false;
+  sidebarTagsNav.style.display = "none";
+  categoryTrigger.classList.remove("open");
 });
 
 let currentNoteId = null;
 let saveTimeout = null;
 let suppressDirty = false;
+let isDirty = false;
 let notesCache = [];
 let allTags = [];
 
@@ -152,17 +162,24 @@ toolbarEl.addEventListener("click", e => {
 
 titleInput.addEventListener("input", () => scheduleSave());
 
+let categoryModalNoteId = null;
+
+function openCategoryModal(noteId) {
+  const note = notesCache.find(n => n.id === noteId);
+  categoryModalNoteId = noteId;
+  categorySelect.value = note?.tag ? String(note.tag.id) : "0";
+  categoryModal.showModal();
+}
+
 categoryBtn.addEventListener("click", () => {
   if (!currentNoteId) return;
-  const current = notesCache.find(n => n.id === currentNoteId);
-  categorySelect.value = current?.tag ? String(current.tag.id) : "0";
-  categoryModal.showModal();
+  openCategoryModal(currentNoteId);
 });
 
 categoryForm.addEventListener("submit", async e => {
   e.preventDefault();
-  if (!currentNoteId) return;
-  const res = await fetch(`/api/notes/${currentNoteId}`, {
+  if (!categoryModalNoteId) return;
+  const res = await fetch(`/api/notes/${categoryModalNoteId}`, {
     method: "PATCH",
     headers: authHeaders(),
     body: JSON.stringify({ tag_id: Number(categorySelect.value) }),
@@ -197,13 +214,14 @@ async function loadTags() {
 
 function scheduleSave() {
   if (suppressDirty || !currentNoteId) return;
+  isDirty = true;
   statusEl.textContent = "Saving…";
   clearTimeout(saveTimeout);
   saveTimeout = setTimeout(saveCurrentNote, 600);
 }
 
 async function saveCurrentNote() {
-  if (!currentNoteId) return;
+  if (!currentNoteId || !isDirty) return;
   const noteId = currentNoteId;
   const markdown = editor.storage.markdown.getMarkdown();
   const title = titleInput.value.trim() || "Untitled";
@@ -214,30 +232,64 @@ async function saveCurrentNote() {
       body: JSON.stringify({ title, content: markdown }),
     });
     if (res.ok) {
+      isDirty = false;
       const note = await res.json();
       const idx = notesCache.findIndex(n => n.id === note.id);
       if (idx !== -1) notesCache[idx] = note;
       renderList();
       statusEl.textContent = "Saved";
+    } else {
+      statusEl.textContent = "Save failed";
     }
   } catch {
     statusEl.textContent = "Save failed";
   }
 }
 
+listEl.addEventListener("dragover", ev => {
+  ev.preventDefault();
+  const dragging = listEl.querySelector(".dragging");
+  if (!dragging) return;
+  const els = [...listEl.querySelectorAll(".notes-list-item:not(.dragging)")];
+  const after = els.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = ev.clientY - box.top - box.height / 2;
+    return offset < 0 && offset > closest.offset ? { offset, element: child } : closest;
+  }, { offset: -Infinity, element: null }).element;
+  if (after == null) listEl.appendChild(dragging);
+  else listEl.insertBefore(dragging, after);
+});
+
 function renderList() {
   listEl.innerHTML = "";
-  const sorted = [...notesCache].sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
-  for (const note of sorted) {
+  const historyMode = !filterTagId && !filterUncategorised;
+  const notes = historyMode
+    ? [...notesCache].sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
+    : notesCache;
+  for (const note of notes) {
     const item = document.createElement("div");
-    item.className = "notes-list-item" + (note.id === currentNoteId ? " active" : "");
+    const isActive = note.id === currentNoteId && !linksTabBtn.classList.contains("active");
+    item.className = "notes-list-item" + (isActive ? " active" : "");
+    item.dataset.id = note.id;
+    item.draggable = !historyMode;
     item.tabIndex = 0;
     item.setAttribute("role", "button");
     item.innerHTML = `
+      <span class="sidebar-cat-dot" style="background:${note.tag ? escHtml(note.tag.color) : "var(--subtext)"};opacity:${note.tag ? 1 : 0.4}"></span>
       <span class="notes-list-title">${escHtml(note.title || "Untitled")}</span>
-      <button class="notes-list-delete" title="Delete note" type="button">
-        <i data-lucide="trash-2"></i>
-      </button>
+      <div class="row-menu-wrap">
+        <button class="row-overflow" title="More" type="button">
+          <i data-lucide="ellipsis"></i>
+        </button>
+        <div class="row-menu">
+          <button type="button" class="row-menu-item" data-action="category">
+            <i data-lucide="tag"></i> Change category
+          </button>
+          <button type="button" class="row-menu-item danger" data-action="delete">
+            <i data-lucide="trash-2"></i> Delete
+          </button>
+        </div>
+      </div>
     `;
     item.addEventListener("click", () => openNote(note.id));
     item.addEventListener("keydown", ev => {
@@ -246,9 +298,30 @@ function renderList() {
         openNote(note.id);
       }
     });
-    item.querySelector(".notes-list-delete").addEventListener("click", ev => {
+    item.querySelector(".row-overflow").addEventListener("click", ev => {
       ev.stopPropagation();
+      toggleRowMenu(ev.currentTarget);
+    });
+    item.querySelector('[data-action="delete"]').addEventListener("click", ev => {
+      ev.stopPropagation();
+      closeRowMenus();
       deleteNote(note.id);
+    });
+    item.querySelector('[data-action="category"]').addEventListener("click", ev => {
+      ev.stopPropagation();
+      closeRowMenus();
+      openCategoryModal(note.id);
+    });
+    item.addEventListener("dragstart", () => item.classList.add("dragging"));
+    item.addEventListener("dragend", () => {
+      item.classList.remove("dragging");
+      const order = [...listEl.children].map(el => el.dataset.id);
+      notesCache.sort((a, b) => order.indexOf(String(a.id)) - order.indexOf(String(b.id)));
+      fetch("/api/notes/reorder", {
+        method: "PATCH",
+        headers: authHeaders(),
+        body: JSON.stringify({ order }),
+      });
     });
     listEl.appendChild(item);
   }
@@ -257,14 +330,14 @@ function renderList() {
 
 async function openNote(id, switchTab = true) {
   if (switchTab && linksTabBtn.classList.contains("active")) setShowingLinks(false);
-  if (id === currentNoteId) return;
+  if (id === currentNoteId) return true;
+  const res = await fetch(`/api/notes/${id}`, { headers: authHeaders(false) });
+  if (!res.ok) return false;
+  const note = await res.json();
+
   clearTimeout(saveTimeout);
   await saveCurrentNote();
-
   currentNoteId = id;
-  const res = await fetch(`/api/notes/${id}`, { headers: authHeaders(false) });
-  if (!res.ok) return;
-  const note = await res.json();
 
   suppressDirty = true;
   titleInput.value = note.title === "Untitled" ? "" : note.title;
@@ -274,6 +347,7 @@ async function openNote(id, switchTab = true) {
   statusEl.textContent = "";
   renderList();
   updateToolbarState();
+  return true;
 }
 
 async function createNote() {
@@ -290,11 +364,13 @@ async function createNote() {
   titleInput.focus();
 }
 
-window.createNoteFromLink = async function(title, url) {
+document.getElementById("notes-new-btn").addEventListener("click", () => createNote());
+
+window.createNoteFromLink = async function(title, url, linkId) {
   const res = await fetch("/api/notes", {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ title, tag_id: filterTagId }),
+    body: JSON.stringify({ title, tag_id: filterTagId, link_id: linkId }),
   });
   if (!res.ok) return;
   const note = await res.json();
@@ -306,7 +382,10 @@ window.createNoteFromLink = async function(title, url) {
   notesCache.unshift(note);
   currentNoteId = null;
   await openNote(note.id);
+  if (linkId) window.loadLinks?.();
 };
+
+window.openNoteById = id => openNote(id);
 
 async function deleteNote(id) {
   const ok = await window.showConfirm("Delete this note? This cannot be undone.");

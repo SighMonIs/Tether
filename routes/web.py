@@ -50,9 +50,11 @@ async def notes_redirect(request: Request):
     return RedirectResponse(f"/{qs}")
 
 
-@router.get("/categories", response_class=HTMLResponse)
-async def categories(request: Request):
+@router.get("/settings", response_class=HTMLResponse)
+async def settings(request: Request):
     api_uuid = get_setting("uuid")
+    base_url = _get_base_url()
+    setup_url = f"{base_url}/shortcut-setup"
     with db() as conn:
         rows = conn.execute("""
             SELECT t.id, t.name, t.color, COUNT(lt.link_id) as link_count
@@ -61,24 +63,13 @@ async def categories(request: Request):
             GROUP BY t.id
             ORDER BY t.name
         """).fetchall()
-    return templates.TemplateResponse("categories.html", {
-        "request": request,
-        "tether_uuid": api_uuid,
-        "tags": [dict(r) for r in rows],
-    })
-
-
-@router.get("/settings", response_class=HTMLResponse)
-async def settings(request: Request):
-    api_uuid = get_setting("uuid")
-    base_url = _get_base_url()
-    setup_url = f"{base_url}/shortcut-setup"
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "tether_uuid": api_uuid,
         "api_uuid": api_uuid,
         "setup_url": setup_url,
         "local_ip": base_url,
+        "tags": [dict(r) for r in rows],
     })
 
 

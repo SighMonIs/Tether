@@ -20,6 +20,21 @@ function showConfirm(message, okLabel = "Delete") {
   });
 }
 
+/* ── Settings "back" button ──────────────────────────────── */
+// Clicking a sidebar anchor (#extension, #api-key, ...) pushes its own history
+// entry, so a plain history.back() only un-does the last hash jump instead of
+// leaving the settings page. Count hash hops made since arriving here and skip
+// over all of them in one go.
+let _settingsHashHops = 0;
+if (location.pathname === "/settings") {
+  window.addEventListener("hashchange", () => { _settingsHashHops++; });
+}
+function settingsGoBack(ev) {
+  ev.preventDefault();
+  history.go(-(_settingsHashHops + 1));
+  _settingsHashHops = 0;
+}
+
 const savedSidebarWidth = localStorage.getItem("sidebarWidth");
 if (savedSidebarWidth) {
   document.documentElement.style.setProperty("--sidebar-w", `${savedSidebarWidth}px`);
@@ -187,7 +202,7 @@ function renderCards(links) {
         <button class="icon-btn read-btn ${link.is_read ? "is-read" : ""}" title="${link.is_read ? "Mark unread" : "Mark as read"}" onclick="toggleRead('${link.id}', ${!link.is_read})">
           <i data-lucide="${link.is_read ? "check" : "eye"}"></i>
         </button>
-        <button class="icon-btn note-btn" title="Add note" onclick="addNoteFromLink('${link.id}')">
+        <button class="icon-btn note-btn ${link.note_id ? "has-note" : ""}" title="${link.note_id ? "Open note" : "Add note"}" onclick="openNoteForLink('${link.id}', ${link.note_id ? `'${link.note_id}'` : "null"})">
           <i data-lucide="file-text"></i>
         </button>
         <button class="icon-btn edit-btn" title="Edit" onclick="editLink('${link.id}')">
@@ -236,7 +251,7 @@ function renderTable(links) {
         <button class="row-read-btn ${link.is_read ? "is-read" : ""}" title="${link.is_read ? "Mark unread" : "Mark as read"}" onclick="toggleRead('${link.id}', ${!link.is_read})">
           <i data-lucide="${link.is_read ? "check" : "eye"}"></i>
         </button>
-        <button class="row-icon-btn" title="Add note" onclick="addNoteFromLink('${link.id}')">
+        <button class="row-icon-btn ${link.note_id ? "has-note" : ""}" title="${link.note_id ? "Open note" : "Add note"}" onclick="openNoteForLink('${link.id}', ${link.note_id ? `'${link.note_id}'` : "null"})">
           <i data-lucide="file-text"></i>
         </button>
         <button class="row-icon-btn" title="Edit" onclick="editLink('${link.id}')">
@@ -382,6 +397,40 @@ async function deleteTag(id, name) {
   setTimeout(() => location.reload(), 500);
 }
 
+let _tagDeleteId = null;
+
+async function openTagDeleteModal(id, name) {
+  _tagDeleteId = id;
+  document.getElementById("tag-delete-title").textContent = `Delete "${name}"?`;
+  document.querySelector('input[name="tag-delete-mode"][value="move"]').checked = true;
+  const select = document.getElementById("tag-delete-target");
+  const res = await fetch("/api/tags", { headers: headers() });
+  const tags = res.ok ? await res.json() : [];
+  select.innerHTML = `<option value="">No category</option>` + tags
+    .filter(t => t.id !== id)
+    .map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join("");
+  document.getElementById("tag-delete-modal").showModal();
+}
+
+async function confirmTagDelete() {
+  const id = _tagDeleteId;
+  const mode = document.querySelector('input[name="tag-delete-mode"]:checked').value;
+  if (mode === "purge") {
+    if (!await showConfirm("This permanently deletes every link and note in this category. This can't be undone.", "Delete everything")) return;
+    await fetch(`/api/tags/${id}/purge`, { method: "DELETE", headers: headers() });
+  } else {
+    const toId = document.getElementById("tag-delete-target").value;
+    await fetch(`/api/tags/${id}/reassign`, {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({ to_tag_id: toId ? Number(toId) : null }),
+    });
+  }
+  document.getElementById("tag-delete-modal").close();
+  toast("Category deleted");
+  setTimeout(() => location.reload(), 400);
+}
+
 let _refreshPollTimer = null;
 
 function showRefreshToast(text) {
@@ -435,7 +484,7 @@ async function startBulkRefresh(btn) {
 
 /* ── Settings page ───────────────────────────────────────── */
 async function loadErrorLog() {
-  const wrap = document.getElementById("error-log");
+  const wrap = document.getElementById("error-log-entries");
   const empty = document.getElementById("error-log-empty");
   if (!wrap) return;
   const errors = await fetch("/api/errors", { headers: headers() }).then(r => r.json());
@@ -453,27 +502,32 @@ async function loadErrorLog() {
 
 async function clearErrorLog() {
   await fetch("/api/errors", { method: "DELETE", headers: headers() });
-  const wrap = document.getElementById("error-log");
+  const wrap = document.getElementById("error-log-entries");
   const empty = document.getElementById("error-log-empty");
   if (wrap) { wrap.style.display = "none"; wrap.innerHTML = ""; }
   if (empty) empty.style.display = "";
   toast("Error log cleared");
 }
 
-function exportData() {
-  const a = document.createElement("a");
-  a.href = "/api/export";
-  a.setAttribute("x-tether-uuid", headers()["x-tether-uuid"] || "");
-  // Pass auth via query isn't ideal — use a fetch + blob instead
-  fetch("/api/export", { headers: headers() })
+const EXPORT_KINDS = {
+  links: { url: "/api/export", filename: "tether-export.json" },
+  notes: { url: "/api/export/notes", filename: "tether-notes.zip" },
+  all: { url: "/api/export/all", filename: "tether-export.zip" },
+};
+
+function doExport(kind, tagId) {
+  document.getElementById("export-modal")?.close();
+  const { url, filename } = EXPORT_KINDS[kind];
+  const finalUrl = tagId ? `${url}?tag=${tagId}` : url;
+  fetch(finalUrl, { headers: headers() })
     .then(r => r.blob())
     .then(blob => {
-      const url = URL.createObjectURL(blob);
+      const objUrl = URL.createObjectURL(blob);
       const a = document.createElement("a");
-      a.href = url;
-      a.download = "tether-export.json";
+      a.href = objUrl;
+      a.download = filename;
       a.click();
-      URL.revokeObjectURL(url);
+      URL.revokeObjectURL(objUrl);
     });
 }
 
@@ -692,7 +746,13 @@ async function addNoteFromLink(id) {
   const res = await fetch(`/api/links/${id}`, { headers: headers() });
   if (!res.ok) return;
   const link = await res.json();
-  await window.createNoteFromLink(link.title || getDomain(link.url), link.url);
+  await window.createNoteFromLink(link.title || getDomain(link.url), link.url, id);
+}
+
+async function openNoteForLink(linkId, noteId) {
+  if (noteId && await window.openNoteById?.(noteId)) return;
+  // note_id was stale (note deleted elsewhere) — fall back to creating a fresh one
+  await addNoteFromLink(linkId);
 }
 
 /* ── Edit modal ──────────────────────────────────────────── */
@@ -923,16 +983,77 @@ async function loadSidebarCats() {
            class="sidebar-cat-link ${activeTag === String(t.id) ? "active" : ""}">
           <span class="sidebar-cat-dot" style="background:${escHtml(t.color)}"></span>
           <span class="sidebar-cat-name">${escHtml(t.name)}</span>
-          ${t.unread_count > 0 ? `<span class="sidebar-cat-badge">${t.unread_count}</span>` : ""}
         </a>
+        <div class="row-menu-wrap">
+          <button class="row-overflow" type="button" title="More">
+            <i data-lucide="ellipsis"></i>
+          </button>
+          <div class="row-menu">
+            <button type="button" class="row-menu-item" data-action="rename" data-id="${t.id}">
+              <i data-lucide="square-pen"></i> Rename
+            </button>
+            <button type="button" class="row-menu-item" data-action="export" data-id="${t.id}">
+              <i data-lucide="download"></i> Export data
+            </button>
+            <button type="button" class="row-menu-item danger" data-action="delete" data-id="${t.id}">
+              <i data-lucide="trash-2"></i> Delete
+            </button>
+          </div>
+        </div>
       </li>
     `).join("");
+
+    ul.querySelectorAll(".row-overflow").forEach(btn => {
+      btn.addEventListener("click", () => toggleRowMenu(btn));
+    });
+    ul.querySelectorAll('[data-action="rename"]').forEach(btn => {
+      btn.addEventListener("click", () => {
+        closeRowMenus();
+        const t = tags.find(x => x.id === Number(btn.dataset.id));
+        if (t) openEditTag(t.id, t.name, t.color);
+      });
+    });
+    ul.querySelectorAll('[data-action="export"]').forEach(btn => {
+      btn.addEventListener("click", () => {
+        closeRowMenus();
+        doExport("all", btn.dataset.id);
+      });
+    });
+    ul.querySelectorAll('[data-action="delete"]').forEach(btn => {
+      btn.addEventListener("click", () => {
+        closeRowMenus();
+        const t = tags.find(x => x.id === Number(btn.dataset.id));
+        if (t) openTagDeleteModal(t.id, t.name);
+      });
+    });
     lucide.createIcons();
   } catch {}
 }
 
 function setPageTitle(title) {
   document.title = `${title} — Tether`;
+}
+
+/* ── Settings tabs ───────────────────────────────────────── */
+function initSettingsTabs() {
+  document.querySelectorAll(".settings-tab").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".settings-tab").forEach(b => b.classList.toggle("active", b === btn));
+      document.querySelectorAll(".settings-group").forEach(g => {
+        g.style.display = g.dataset.group === btn.dataset.group ? "" : "none";
+      });
+    });
+  });
+}
+
+/* ── Notes toolbar setting ───────────────────────────────── */
+function toggleNotesToolbarSetting(show) {
+  localStorage.setItem("notesToolbarHidden", show ? "" : "1");
+}
+
+function initNotesToolbarToggle() {
+  const checkbox = document.getElementById("notes-toolbar-toggle");
+  if (checkbox) checkbox.checked = localStorage.getItem("notesToolbarHidden") !== "1";
 }
 
 /* ── Init ────────────────────────────────────────────────── */
@@ -970,4 +1091,6 @@ document.addEventListener("DOMContentLoaded", () => {
     updateCounts();
   }
   loadErrorLog();
+  initSettingsTabs();
+  initNotesToolbarToggle();
 });

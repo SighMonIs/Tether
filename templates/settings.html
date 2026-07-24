@@ -1,18 +1,11 @@
 {% extends "base.html" %}
 {% block title %}Settings — Tether{% endblock %}
 {% block sidebar_nav %}
-<div class="sidebar-tags-nav" style="display:flex">
-  <div class="sidebar-section-header">
-    <span class="sidebar-section-label">Settings</span>
-  </div>
+<div class="sidebar-settings-nav">
   <ul class="sidebar-cats">
-    <li><a href="#extension" class="sidebar-cat-link"><span class="sidebar-cat-name">Firefox Extension</span></a></li>
-    <li><a href="#shortcut" class="sidebar-cat-link"><span class="sidebar-cat-name">iOS Shortcut</span></a></li>
-    <li><a href="#api-key" class="sidebar-cat-link"><span class="sidebar-cat-name">API Key</span></a></li>
-    <li><a href="#refresh" class="sidebar-cat-link"><span class="sidebar-cat-name">Refresh Metadata</span></a></li>
-    <li><a href="#export-import" class="sidebar-cat-link"><span class="sidebar-cat-name">Export &amp; Import</span></a></li>
-    <li><a href="#error-log" class="sidebar-cat-link"><span class="sidebar-cat-name">Error Log</span></a></li>
-    <li><a href="#server-info" class="sidebar-cat-link"><span class="sidebar-cat-name">Server Info</span></a></li>
+    <li><button type="button" class="sidebar-cat-link settings-tab active" data-group="app">App</button></li>
+    <li><button type="button" class="sidebar-cat-link settings-tab" data-group="links">Links</button></li>
+    <li><button type="button" class="sidebar-cat-link settings-tab" data-group="notes">Notes</button></li>
   </ul>
 </div>
 {% endblock %}
@@ -20,6 +13,109 @@
 <div class="feed">
   <div class="feed-card">
     <div class="feed-scroll">
+
+      <div class="settings-group" data-group="app">
+      <h2 class="settings-group-title">App</h2>
+      <div class="settings-grid">
+
+        <section class="settings-card" id="tags" style="grid-column:1/-1">
+          <div class="page-header" style="margin-bottom:0.75rem">
+            <h2 style="margin-bottom:0">Tags</h2>
+            <span class="subtext" id="tag-count">{{ tags|length }} tag{% if tags|length != 1 %}s{% endif %}</span>
+            <button class="btn-primary" style="margin-left:auto" onclick="openNewTagModal()">New Tag</button>
+          </div>
+          <table class="links-table">
+            <colgroup>
+              <col style="width:36px">
+              <col>
+              <col style="width:80px">
+              <col style="width:150px">
+            </colgroup>
+            <thead>
+              <tr>
+                <th></th>
+                <th>Name</th>
+                <th>Links</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for tag in tags %}
+              <tr>
+                <td><span class="sidebar-cat-dot" style="background:{{ tag.color }}"></span></td>
+                <td class="tag-row-name">{{ tag.name }}</td>
+                <td class="row-date">{{ tag.link_count }} link{% if tag.link_count != 1 %}s{% endif %}</td>
+                <td class="row-actions">
+                  <a href="/?tag={{ tag.id }}" class="row-icon-btn" title="Browse">
+                    <i data-lucide="arrow-right"></i>
+                  </a>
+                  <button class="row-icon-btn" title="Edit tag"
+                    onclick="openEditTag({{ tag.id }}, '{{ tag.name }}', '{{ tag.color }}')">
+                    <i data-lucide="square-pen"></i>
+                  </button>
+                  <button class="row-icon-btn danger" title="Delete tag"
+                    onclick="deleteTag({{ tag.id }}, '{{ tag.name }}')">
+                    <i data-lucide="trash-2"></i>
+                  </button>
+                </td>
+              </tr>
+              {% else %}
+              <tr><td colspan="4" class="empty-state">No tags yet.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </section>
+
+        <section class="settings-card" id="api-key">
+          <h2>API key (UUID)</h2>
+          <p>This UUID is embedded in your shortcut and authenticates all requests. Keep it private.</p>
+          <div class="uuid-display">
+            <code id="uuid-text">{{ api_uuid }}</code>
+            <button class="icon-btn" onclick="copyUUID()" title="Copy">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </div>
+          <p class="hint">If you regenerate this key you will need to re-download the shortcut.</p>
+          <button class="btn-danger" onclick="confirmRegenerate()">Regenerate key</button>
+        </section>
+
+        <section class="settings-card" id="export-import">
+          <h2>Export &amp; Import</h2>
+          <p>Export your links, notes, or both, or import a previously exported links JSON file. Importing will add any links that don't already exist — it won't overwrite or delete anything.</p>
+          <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:0.75rem">
+            <button class="btn-primary" onclick="document.getElementById('export-modal').showModal()">Export data</button>
+            <label class="btn-ghost" style="cursor:pointer">
+              Import data
+              <input type="file" accept=".json" style="display:none" onchange="importData(this)">
+            </label>
+          </div>
+          <p class="hint" id="import-hint" style="margin-top:0.5rem"></p>
+        </section>
+
+        <section class="settings-card" id="error-log">
+          <h2>Error log</h2>
+          <p>Errors from metadata fetches and imports. Cleared when the server restarts.</p>
+          <div id="error-log-wrap">
+            <p class="hint" id="error-log-empty" style="margin-top:0.5rem">No errors recorded.</p>
+            <div id="error-log-entries" class="error-log" style="display:none"></div>
+          </div>
+          <button class="btn-ghost" style="margin-top:0.75rem" onclick="clearErrorLog()">Clear log</button>
+        </section>
+
+        <section class="settings-card" id="server-info">
+          <h2>Server info</h2>
+          <dl class="info-list">
+            <dt>Local IP</dt><dd><code>{{ local_ip }}</code></dd>
+            <dt>Port</dt><dd><code>5225</code></dd>
+            <dt>API base</dt><dd><code>http://{{ local_ip }}:5225/api</code></dd>
+          </dl>
+        </section>
+
+      </div>
+      </div>
+
+      <div class="settings-group" data-group="links" style="display:none">
+      <h2 class="settings-group-title">Links</h2>
       <div class="settings-grid">
 
         <section class="settings-card" id="extension">
@@ -53,58 +149,56 @@
           </a>
         </section>
 
-        <section class="settings-card" id="api-key">
-          <h2>API key (UUID)</h2>
-          <p>This UUID is embedded in your shortcut and authenticates all requests. Keep it private.</p>
-          <div class="uuid-display">
-            <code id="uuid-text">{{ api_uuid }}</code>
-            <button class="icon-btn" onclick="copyUUID()" title="Copy">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-            </button>
-          </div>
-          <p class="hint">If you regenerate this key you will need to re-download the shortcut.</p>
-          <button class="btn-danger" onclick="confirmRegenerate()">Regenerate key</button>
-        </section>
-
         <section class="settings-card" id="refresh">
           <h2>Refresh metadata</h2>
           <p>Re-fetch titles and descriptions for all links. Useful if links were saved with missing or incorrect metadata.</p>
           <button class="btn-primary" id="refresh-all-btn" onclick="startBulkRefresh(this)">Refresh all links</button>
         </section>
 
-        <section class="settings-card" id="export-import">
-          <h2>Export &amp; Import</h2>
-          <p>Export all your links and tags to a JSON file, or import a previously exported file. Importing will add any links that don't already exist — it won't overwrite or delete anything.</p>
-          <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:0.75rem">
-            <button class="btn-primary" onclick="exportData()">Export data</button>
-            <label class="btn-ghost" style="cursor:pointer">
-              Import data
-              <input type="file" accept=".json" style="display:none" onchange="importData(this)">
-            </label>
-          </div>
-          <p class="hint" id="import-hint" style="margin-top:0.5rem"></p>
+      </div>
+      </div>
+
+      <div class="settings-group" data-group="notes" style="display:none">
+      <h2 class="settings-group-title">Notes</h2>
+      <div class="settings-grid">
+
+        <section class="settings-card" id="toolbar-toggle">
+          <h2>Editor Toolbar</h2>
+          <p>Show or hide the formatting toolbar above notes. Slash commands still work either way.</p>
+          <label class="settings-toggle-row">
+            <span>Show toolbar</span>
+            <span class="switch">
+              <input type="checkbox" id="notes-toolbar-toggle" onchange="toggleNotesToolbarSetting(this.checked)">
+              <span class="switch-track"></span>
+            </span>
+          </label>
         </section>
 
-        <section class="settings-card" id="error-log">
-          <h2>Error log</h2>
-          <p>Errors from metadata fetches and imports. Cleared when the server restarts.</p>
-          <div id="error-log-wrap">
-            <p class="hint" id="error-log-empty" style="margin-top:0.5rem">No errors recorded.</p>
-            <div id="error-log" class="error-log" style="display:none"></div>
-          </div>
-          <button class="btn-ghost" style="margin-top:0.75rem" onclick="clearErrorLog()">Clear log</button>
-        </section>
-
-        <section class="settings-card" id="server-info">
-          <h2>Server info</h2>
-          <dl class="info-list">
-            <dt>Local IP</dt><dd><code>{{ local_ip }}</code></dd>
-            <dt>Port</dt><dd><code>5225</code></dd>
-            <dt>API base</dt><dd><code>http://{{ local_ip }}:5225/api</code></dd>
-          </dl>
+        <section class="settings-card" id="slash-commands">
+          <h2>Slash Commands</h2>
+          <p>Type <code>/</code> in a note to open the command menu. Block commands (headings, lists, quote, code block, divider) also trigger directly if you type the full command and press space.</p>
+          <ul class="slash-command-list">
+            <li><i data-lucide="heading-1"></i><code>/heading1</code><span>Heading 1</span></li>
+            <li><i data-lucide="heading-2"></i><code>/heading2</code><span>Heading 2</span></li>
+            <li><i data-lucide="heading-3"></i><code>/heading3</code><span>Heading 3</span></li>
+            <li><i data-lucide="list"></i><code>/bulletlist</code><span>Bullet list</span></li>
+            <li><i data-lucide="list-ordered"></i><code>/numberedlist</code><span>Numbered list</span></li>
+            <li><i data-lucide="list-checks"></i><code>/tasklist</code><span>Task list</span></li>
+            <li><i data-lucide="quote"></i><code>/quote</code><span>Quote</span></li>
+            <li><i data-lucide="square-code"></i><code>/code</code><span>Code block</span></li>
+            <li><i data-lucide="minus"></i><code>/divider</code><span>Divider</span></li>
+            <li><i data-lucide="bold"></i><code>/bold</code><span>Bold</span></li>
+            <li><i data-lucide="italic"></i><code>/italic</code><span>Italic</span></li>
+            <li><i data-lucide="underline"></i><code>/underline</code><span>Underline</span></li>
+            <li><i data-lucide="strikethrough"></i><code>/strikethrough</code><span>Strikethrough</span></li>
+            <li><i data-lucide="code"></i><code>/inlinecode</code><span>Inline code</span></li>
+            <li><i data-lucide="link"></i><code>/link</code><span>Link</span></li>
+          </ul>
         </section>
 
       </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -116,6 +210,38 @@
     <div class="modal-actions">
       <button class="btn-ghost" onclick="document.getElementById('regen-modal').close()">Cancel</button>
       <button class="btn-danger" onclick="regenerateKey()">Yes, regenerate</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="export-modal" class="modal">
+  <div class="modal-content">
+    <h2>Export data</h2>
+    <div class="export-options">
+      <button type="button" class="export-option" onclick="doExport('links')">
+        <i data-lucide="link"></i>
+        <span>
+          <strong>Links only</strong>
+          <small>A JSON file with your links and tags</small>
+        </span>
+      </button>
+      <button type="button" class="export-option" onclick="doExport('notes')">
+        <i data-lucide="file-text"></i>
+        <span>
+          <strong>Notes only</strong>
+          <small>A ZIP file with each note as a .md file</small>
+        </span>
+      </button>
+      <button type="button" class="export-option" onclick="doExport('all')">
+        <i data-lucide="archive"></i>
+        <span>
+          <strong>Everything</strong>
+          <small>A ZIP with links.json plus every note</small>
+        </span>
+      </button>
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn-ghost" onclick="document.getElementById('export-modal').close()">Cancel</button>
     </div>
   </div>
 </dialog>

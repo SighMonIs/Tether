@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Tether{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="stylesheet" href="/static/style.css?v=059">
+  <link rel="stylesheet" href="/static/style.css?v=075">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <meta name="tether-uuid" content="{{ tether_uuid | default('') }}">
 </head>
@@ -21,41 +21,54 @@
         </svg>
         <span>Tether</span>
       </a>
-      <a href="/settings" class="sidebar-add-btn {% if request.url.path == '/settings' %}active{% endif %}" title="Settings" onclick="{% if request.url.path == '/settings' %}event.preventDefault(); history.back();{% endif %}">
+      <a href="/settings" class="sidebar-add-btn {% if request.url.path == '/settings' %}active{% endif %}" title="Settings" onclick="{% if request.url.path == '/settings' %}settingsGoBack(event){% endif %}">
         <i data-lucide="settings"></i>
       </a>
     </div>
 
     {% block sidebar_nav %}
-    <div class="sidebar-content-tabs">
-      <button class="sidebar-content-tab" id="tab-links-btn">Links</button>
-      <button class="sidebar-content-tab active" id="tab-notes-btn">Notes</button>
+    <div class="sidebar-category-wrap">
+      <button class="sidebar-category-trigger" id="sidebar-category-trigger">
+        <span id="sidebar-category-label"><i data-lucide="home" class="sidebar-cat-star"></i>Home</span>
+        <i data-lucide="chevron-down"></i>
+      </button>
+
+      <div class="sidebar-tags-nav" id="sidebar-tags-nav" style="display:none">
+        <ul class="sidebar-cats">
+          <li>
+            <a href="/" class="sidebar-cat-link {% if request.url.path == '/' and not request.query_params.get('tag') and not request.query_params.get('uncategorised') %}active{% endif %}">
+              <i data-lucide="home" class="sidebar-cat-star"></i>
+              <span class="sidebar-cat-name">Home</span>
+            </a>
+          </li>
+        </ul>
+        <div class="sidebar-section-header">
+          <span class="sidebar-section-label">Tags</span>
+          <button type="button" class="sidebar-section-btn" onclick="openNewTagModal()" title="New tag">
+            <i data-lucide="plus"></i>
+          </button>
+        </div>
+        <ul class="sidebar-cats" id="sidebar-cats"></ul>
+      </div>
     </div>
 
-    <button class="sidebar-category-trigger" id="sidebar-category-trigger">
-      <span id="sidebar-category-label"><i data-lucide="home" class="sidebar-cat-star"></i>Home</span>
-      <i data-lucide="chevron-down"></i>
-    </button>
-
-    <div class="sidebar-tags-nav" id="sidebar-tags-nav" style="display:none">
-      <ul class="sidebar-cats">
-        <li>
-          <a href="/" class="sidebar-cat-link {% if request.url.path == '/' and not request.query_params.get('tag') and not request.query_params.get('uncategorised') %}active{% endif %}">
-            <i data-lucide="home" class="sidebar-cat-star"></i>
-            <span class="sidebar-cat-name">Home</span>
-          </a>
-        </li>
-      </ul>
-      <div class="sidebar-section-header">
-        <span class="sidebar-section-label">Tags</span>
-        <a href="/categories" class="sidebar-section-btn {% if request.url.path == '/categories' %}active{% endif %}" title="Manage tags">
-          <i data-lucide="pencil"></i>
-        </a>
-      </div>
-      <ul class="sidebar-cats" id="sidebar-cats"></ul>
+    <div class="sidebar-links-row">
+      <button type="button" class="sidebar-cat-link" id="tab-links-btn">
+        <i data-lucide="link"></i>
+        <span class="sidebar-cat-name">Links</span>
+      </button>
+      <button type="button" class="sidebar-section-btn" onclick="openAddLink()" title="Add link">
+        <i data-lucide="plus"></i>
+      </button>
     </div>
 
     <div class="sidebar-notes-nav" id="sidebar-notes-nav">
+      <div class="sidebar-section-header">
+        <span class="sidebar-section-label">Notes</span>
+        <button type="button" class="sidebar-section-btn" id="notes-new-btn" title="New note">
+          <i data-lucide="plus"></i>
+        </button>
+      </div>
       <div class="notes-list" id="notes-list"></div>
     </div>
     {% endblock %}
@@ -131,6 +144,73 @@
     </div>
   </dialog>
 
+  <dialog id="new-tag-modal" class="modal">
+    <div class="modal-content">
+      <h2>New Tag</h2>
+      <form id="new-tag-form" onsubmit="createTag(event)">
+        <div class="form-group">
+          <label for="new-tag-name">Name</label>
+          <input type="text" id="new-tag-name" placeholder="e.g. Design" required autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="new-tag-color">Color</label>
+          <input type="color" id="new-tag-color" value="#6366f1">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" onclick="document.getElementById('new-tag-modal').close()">Cancel</button>
+          <button type="submit" class="btn-primary">Create</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="edit-tag-modal" class="modal">
+    <div class="modal-content">
+      <h2>Edit tag</h2>
+      <form id="edit-tag-form" onsubmit="saveTag(event)">
+        <input type="hidden" id="edit-tag-id">
+        <div class="form-group">
+          <label for="edit-tag-name">Name</label>
+          <input type="text" id="edit-tag-name" placeholder="Tag name" required autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="edit-tag-color">Color</label>
+          <input type="color" id="edit-tag-color" value="#6366f1">
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" onclick="document.getElementById('edit-tag-modal').close()">Cancel</button>
+          <button type="submit" class="btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="tag-delete-modal" class="modal">
+    <div class="modal-content">
+      <h2 id="tag-delete-title">Delete tag</h2>
+      <div class="tag-delete-options">
+        <label class="tag-delete-option">
+          <input type="radio" name="tag-delete-mode" value="move" checked>
+          <div>
+            <strong>Move to another category</strong>
+            <select id="tag-delete-target" class="edit-tag-select"></select>
+          </div>
+        </label>
+        <label class="tag-delete-option">
+          <input type="radio" name="tag-delete-mode" value="purge">
+          <div>
+            <strong>Delete everything in this category</strong>
+            <small>Permanently deletes all links and notes tagged with it. This can't be undone.</small>
+          </div>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" onclick="document.getElementById('tag-delete-modal').close()">Cancel</button>
+        <button type="button" class="btn-danger" onclick="confirmTagDelete()">Continue</button>
+      </div>
+    </div>
+  </dialog>
+
   <main class="main-content {% block main_class %}{% endblock %}">
     {% block content %}{% endblock %}
   </main>
@@ -142,7 +222,7 @@
     </button>
   </div>
 
-  <script src="/static/app.js?v=036"></script>
+  <script src="/static/app.js?v=044"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
