@@ -87,6 +87,8 @@ _OEMBED_PROVIDERS = [
     ("vt.tiktok.com","https://www.tiktok.com/oembed"),
 ]
 
+_INSTAGRAM_DOMAINS = ("instagram.com", "instagr.am")
+
 
 async def _fetch_metadata(link_id: str, url: str):
     try:
@@ -143,6 +145,14 @@ async def _fetch_metadata(link_id: str, url: str):
                 # 3. Plain <title> tag last resort
                 if not title and soup.title:
                     title = soup.title.string.strip()
+
+                # Instagram serves a login wall with no usable meta tags; fall
+                # back to a generic label instead of the bare "Instagram" title.
+                if any(d in resolved_domain for d in _INSTAGRAM_DOMAINS) and (
+                    not title or title.strip().lower() == "instagram"
+                ):
+                    title = "Instagram reel" if "/reel/" in resolved_url else "Instagram post"
+                    desc = None
 
         with db() as conn:
             conn.execute(
