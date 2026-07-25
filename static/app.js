@@ -390,44 +390,39 @@ async function createTag(e) {
   }
 }
 
-async function deleteTag(id, name) {
-  if (!await showConfirm(`Delete tag "${name}"? Links using it won't be deleted.`)) return;
-  await fetch(`/api/tags/${id}`, { method: "DELETE", headers: headers() });
-  toast("Tag deleted");
-  setTimeout(() => location.reload(), 500);
-}
-
 let _tagDeleteId = null;
 
 async function openTagDeleteModal(id, name) {
   _tagDeleteId = id;
-  document.getElementById("tag-delete-title").textContent = `Delete "${name}"?`;
-  document.querySelector('input[name="tag-delete-mode"][value="move"]').checked = true;
-  const select = document.getElementById("tag-delete-target");
+  document.getElementById("tag-delete-title").textContent = "Delete tag";
+  document.getElementById("tag-delete-msg").textContent =
+    `Deleting tag "${name}" is permanent, what would you like to do with the Links and Notes:`;
+  const select = document.getElementById("tag-delete-select");
   const res = await fetch("/api/tags", { headers: headers() });
   const tags = res.ok ? await res.json() : [];
-  select.innerHTML = `<option value="">No category</option>` + tags
+  const moveOptions = `<option value="">Untagged</option>` + tags
     .filter(t => t.id !== id)
     .map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join("");
+  select.innerHTML = `<option value="purge">Delete as well</option>`
+    + `<optgroup label="Move to:">${moveOptions}</optgroup>`;
   document.getElementById("tag-delete-modal").showModal();
 }
 
 async function confirmTagDelete() {
   const id = _tagDeleteId;
-  const mode = document.querySelector('input[name="tag-delete-mode"]:checked').value;
-  if (mode === "purge") {
+  const value = document.getElementById("tag-delete-select").value;
+  if (value === "purge") {
     if (!await showConfirm("This permanently deletes every link and note in this category. This can't be undone.", "Delete everything")) return;
     await fetch(`/api/tags/${id}/purge`, { method: "DELETE", headers: headers() });
   } else {
-    const toId = document.getElementById("tag-delete-target").value;
     await fetch(`/api/tags/${id}/reassign`, {
       method: "POST",
       headers: headers(),
-      body: JSON.stringify({ to_tag_id: toId ? Number(toId) : null }),
+      body: JSON.stringify({ to_tag_id: value ? Number(value) : null }),
     });
   }
   document.getElementById("tag-delete-modal").close();
-  toast("Category deleted");
+  toast("Tag deleted");
   setTimeout(() => location.reload(), 400);
 }
 
@@ -481,6 +476,35 @@ async function startBulkRefresh(btn) {
     }
   } catch { /* ignore */ }
 })();
+
+/* ── Link cleanup ────────────────────────────────────────── */
+function stepCleanupValue(delta) {
+  const input = document.getElementById("cleanup-value");
+  input.value = Math.max(1, (parseInt(input.value, 10) || 1) + delta);
+}
+
+async function cleanupOldLinks() {
+  const value = parseInt(document.getElementById("cleanup-value").value, 10);
+  const unit = document.getElementById("cleanup-unit").value;
+  if (!value || value < 1) { toast("Enter a number greater than 0"); return; }
+
+  const qs = `value=${value}&unit=${unit}`;
+  const previewRes = await fetch(`/api/links/cleanup-preview?${qs}`, { headers: headers() });
+  const { count } = previewRes.ok ? await previewRes.json() : { count: 0 };
+  if (!count) { toast("No links older than that"); return; }
+
+  const label = `${value} ${value === 1 ? unit.slice(0, -1) : unit}`;
+  if (!await showConfirm(`Delete ${count} link${count !== 1 ? "s" : ""} older than ${label}? This can't be undone.`, "Delete")) return;
+
+  const res = await fetch(`/api/links/cleanup?${qs}`, { method: "DELETE", headers: headers() });
+  if (res.ok) {
+    const { deleted } = await res.json();
+    toast(`Deleted ${deleted} link${deleted !== 1 ? "s" : ""}`);
+    loadLinks();
+    loadSidebarCats();
+    updateCounts();
+  }
+}
 
 /* ── Settings page ───────────────────────────────────────── */
 async function loadErrorLog() {

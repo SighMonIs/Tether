@@ -922,6 +922,62 @@ h1 { font-size: 1.6rem; font-weight: 700; }
   margin-top: 0.75rem;
 }
 
+.cleanup-row {
+  display: flex;
+  align-items: stretch;
+  gap: 0.6rem;
+  margin-top: 0.75rem;
+}
+.cleanup-row .edit-tag-select {
+  width: auto;
+  margin-top: 0;
+}
+
+.number-stepper {
+  display: flex;
+  align-items: stretch;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.number-stepper input[type="number"] {
+  -moz-appearance: textfield;
+  background: none;
+  border: none;
+  color: var(--text);
+  font-size: 0.875rem;
+  padding: 0 0.75rem;
+  width: 60px;
+  outline: none;
+}
+.number-stepper input[type="number"]::-webkit-outer-spin-button,
+.number-stepper input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.number-stepper-arrows {
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.number-stepper-arrows button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  color: var(--subtext);
+  cursor: pointer;
+  width: 24px;
+  height: 18px;
+  padding: 0;
+}
+.number-stepper-arrows button:not(:last-child) { border-bottom: 1px solid var(--border); }
+.number-stepper-arrows button:hover { background: var(--surface); color: var(--text); }
+.number-stepper-arrows button i { width: 11px; height: 11px; }
+
 .switch {
   position: relative;
   display: inline-block;
@@ -1137,28 +1193,6 @@ h1 { font-size: 1.6rem; font-weight: 700; }
 .export-option strong { display: block; font-size: 0.88rem; }
 .export-option small { display: block; color: var(--subtext); font-size: 0.78rem; margin-top: 0.1rem; }
 
-.tag-delete-options {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-.tag-delete-option {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.65rem;
-  width: 100%;
-  background: var(--surface2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.7rem 0.9rem;
-  cursor: pointer;
-}
-.tag-delete-option:has(input:checked) { border-color: var(--accent); }
-.tag-delete-option input[type="radio"] { margin-top: 0.2rem; accent-color: var(--accent); flex-shrink: 0; }
-.tag-delete-option > div { flex: 1; min-width: 0; }
-.tag-delete-option strong { display: block; font-size: 0.88rem; color: var(--text); }
-.tag-delete-option small { display: block; color: var(--subtext); font-size: 0.78rem; margin-top: 0.15rem; }
-.tag-delete-option select { margin-top: 0.5rem; width: 100%; }
 
 /* ── Modal tabs ──────────────────────────────────────────── */
 .modal-tabs {

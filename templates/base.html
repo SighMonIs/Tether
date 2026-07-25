@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{% block title %}Tether{% endblock %}</title>
   <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
-  <link rel="stylesheet" href="/static/style.css?v=076">
+  <link rel="stylesheet" href="/static/style.css?v=078">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <meta name="tether-uuid" content="{{ tether_uuid | default('') }}">
 </head>
@@ -188,22 +188,8 @@
   <dialog id="tag-delete-modal" class="modal">
     <div class="modal-content">
       <h2 id="tag-delete-title">Delete tag</h2>
-      <div class="tag-delete-options">
-        <label class="tag-delete-option">
-          <input type="radio" name="tag-delete-mode" value="move" checked>
-          <div>
-            <strong>Move to another category</strong>
-            <select id="tag-delete-target" class="edit-tag-select"></select>
-          </div>
-        </label>
-        <label class="tag-delete-option">
-          <input type="radio" name="tag-delete-mode" value="purge">
-          <div>
-            <strong>Delete everything in this category</strong>
-            <small>Permanently deletes all links and notes tagged with it. This can't be undone.</small>
-          </div>
-        </label>
-      </div>
+      <p id="tag-delete-msg" class="hint"></p>
+      <select id="tag-delete-select" class="edit-tag-select"></select>
       <div class="modal-actions">
         <button type="button" class="btn-ghost" onclick="document.getElementById('tag-delete-modal').close()">Cancel</button>
         <button type="button" class="btn-danger" onclick="confirmTagDelete()">Continue</button>
@@ -222,7 +208,7 @@
     </button>
   </div>
 
-  <script src="/static/app.js?v=044"></script>
+  <script src="/static/app.js?v=047"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

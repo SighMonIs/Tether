@@ -57,12 +57,19 @@ async def settings(request: Request):
     setup_url = f"{base_url}/shortcut-setup"
     with db() as conn:
         rows = conn.execute("""
-            SELECT t.id, t.name, t.color, COUNT(lt.link_id) as link_count
+            SELECT t.id, t.name, t.color,
+                   COUNT(DISTINCT lt.link_id) as link_count,
+                   COUNT(DISTINCT n.id) as note_count
             FROM tags t
             LEFT JOIN link_tags lt ON lt.tag_id = t.id
+            LEFT JOIN notes n ON n.tag_id = t.id
             GROUP BY t.id
             ORDER BY t.name
         """).fetchall()
+        uncat_links = conn.execute(
+            "SELECT COUNT(*) FROM links l WHERE NOT EXISTS (SELECT 1 FROM link_tags lt WHERE lt.link_id = l.id)"
+        ).fetchone()[0]
+        uncat_notes = conn.execute("SELECT COUNT(*) FROM notes WHERE tag_id IS NULL").fetchone()[0]
     return templates.TemplateResponse("settings.html", {
         "request": request,
         "tether_uuid": api_uuid,
@@ -70,6 +77,8 @@ async def settings(request: Request):
         "setup_url": setup_url,
         "local_ip": base_url,
         "tags": [dict(r) for r in rows],
+        "uncat_links": uncat_links,
+        "uncat_notes": uncat_notes,
     })
 
 

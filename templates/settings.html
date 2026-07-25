@@ -4,6 +4,7 @@
 <div class="sidebar-settings-nav">
   <ul class="sidebar-cats">
     <li><button type="button" class="sidebar-cat-link settings-tab active" data-group="app">App</button></li>
+    <li><button type="button" class="sidebar-cat-link settings-tab" data-group="tags">Tags</button></li>
     <li><button type="button" class="sidebar-cat-link settings-tab" data-group="links">Links</button></li>
     <li><button type="button" class="sidebar-cat-link settings-tab" data-group="notes">Notes</button></li>
   </ul>
@@ -14,8 +15,8 @@
   <div class="feed-card">
     <div class="feed-scroll">
 
-      <div class="settings-group" data-group="app">
-      <h2 class="settings-group-title">App</h2>
+      <div class="settings-group" data-group="tags" style="display:none">
+      <h2 class="settings-group-title">Tags</h2>
       <div class="settings-grid">
 
         <section class="settings-card" id="tags" style="grid-column:1/-1">
@@ -29,6 +30,7 @@
               <col style="width:36px">
               <col>
               <col style="width:80px">
+              <col style="width:80px">
               <col style="width:150px">
             </colgroup>
             <thead>
@@ -36,15 +38,28 @@
                 <th></th>
                 <th>Name</th>
                 <th>Links</th>
+                <th>Notes</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
+              <tr>
+                <td><span class="sidebar-cat-dot" style="background:var(--subtext);opacity:0.4"></span></td>
+                <td class="tag-row-name">Untagged</td>
+                <td class="row-date">{{ uncat_links }} link{% if uncat_links != 1 %}s{% endif %}</td>
+                <td class="row-date">{{ uncat_notes }} note{% if uncat_notes != 1 %}s{% endif %}</td>
+                <td class="row-actions">
+                  <a href="/?uncategorised=true" class="row-icon-btn" title="Browse">
+                    <i data-lucide="arrow-right"></i>
+                  </a>
+                </td>
+              </tr>
               {% for tag in tags %}
               <tr>
                 <td><span class="sidebar-cat-dot" style="background:{{ tag.color }}"></span></td>
                 <td class="tag-row-name">{{ tag.name }}</td>
                 <td class="row-date">{{ tag.link_count }} link{% if tag.link_count != 1 %}s{% endif %}</td>
+                <td class="row-date">{{ tag.note_count }} note{% if tag.note_count != 1 %}s{% endif %}</td>
                 <td class="row-actions">
                   <a href="/?tag={{ tag.id }}" class="row-icon-btn" title="Browse">
                     <i data-lucide="arrow-right"></i>
@@ -54,17 +69,22 @@
                     <i data-lucide="square-pen"></i>
                   </button>
                   <button class="row-icon-btn danger" title="Delete tag"
-                    onclick="deleteTag({{ tag.id }}, '{{ tag.name }}')">
+                    onclick="openTagDeleteModal({{ tag.id }}, '{{ tag.name }}')">
                     <i data-lucide="trash-2"></i>
                   </button>
                 </td>
               </tr>
-              {% else %}
-              <tr><td colspan="4" class="empty-state">No tags yet.</td></tr>
               {% endfor %}
             </tbody>
           </table>
         </section>
+
+      </div>
+      </div>
+
+      <div class="settings-group" data-group="app">
+      <h2 class="settings-group-title">App</h2>
+      <div class="settings-grid">
 
         <section class="settings-card" id="api-key">
           <h2>API key (UUID)</h2>
@@ -153,6 +173,27 @@
           <h2>Refresh metadata</h2>
           <p>Re-fetch titles and descriptions for all links. Useful if links were saved with missing or incorrect metadata.</p>
           <button class="btn-primary" id="refresh-all-btn" onclick="startBulkRefresh(this)">Refresh all links</button>
+        </section>
+
+        <section class="settings-card" id="cleanup">
+          <h2>Clean Up Links</h2>
+          <p>Delete links older than a set time period. This can't be undone.</p>
+          <div class="cleanup-row">
+            <div class="number-stepper">
+              <input type="number" id="cleanup-value" min="1" value="6" inputmode="numeric">
+              <div class="number-stepper-arrows">
+                <button type="button" onclick="stepCleanupValue(1)" title="Increase"><i data-lucide="chevron-up"></i></button>
+                <button type="button" onclick="stepCleanupValue(-1)" title="Decrease"><i data-lucide="chevron-down"></i></button>
+              </div>
+            </div>
+            <select id="cleanup-unit" class="edit-tag-select">
+              <option value="days">Days</option>
+              <option value="weeks">Weeks</option>
+              <option value="months" selected>Months</option>
+              <option value="years">Years</option>
+            </select>
+          </div>
+          <button class="btn-danger" style="margin-top:0.75rem" onclick="cleanupOldLinks()">Delete old links</button>
         </section>
 
       </div>

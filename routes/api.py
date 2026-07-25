@@ -432,6 +432,41 @@ def search_links(q: str, x_tether_uuid: str | None = Header(default=None)):
         return _link_rows(conn, rows)
 
 
+_CLEANUP_UNITS = {"days", "weeks", "months", "years"}
+
+
+def _cleanup_cutoff_modifier(value: int, unit: str) -> str:
+    if value <= 0:
+        raise HTTPException(status_code=422, detail="value must be positive")
+    unit = unit.lower()
+    if unit not in _CLEANUP_UNITS:
+        raise HTTPException(status_code=422, detail="invalid unit")
+    if unit == "weeks":
+        return f"-{value * 7} days"
+    return f"-{value} {unit}"
+
+
+@router.get("/links/cleanup-preview")
+def cleanup_preview(value: int, unit: str, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    modifier = _cleanup_cutoff_modifier(value, unit)
+    with db() as conn:
+        count = conn.execute(
+            "SELECT COUNT(*) FROM links WHERE created_at < datetime('now', ?)", (modifier,)
+        ).fetchone()[0]
+    return {"count": count}
+
+
+@router.delete("/links/cleanup")
+def cleanup_links(value: int, unit: str, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    modifier = _cleanup_cutoff_modifier(value, unit)
+    with db() as conn:
+        cur = conn.execute("DELETE FROM links WHERE created_at < datetime('now', ?)", (modifier,))
+        deleted = cur.rowcount
+    return {"deleted": deleted}
+
+
 class LinkUpdate(BaseModel):
     is_read: bool | None = None
     tags: list[str] | None = None
