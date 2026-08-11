@@ -765,6 +765,141 @@ async function submitAddLink(e) {
   }
 }
 
+/* ── Quick add (from share sheet) ────────────────────────── */
+let _quickAddTags = []; // [{name, color}]
+let _quickAddUrl = "";
+let _quickAddTitle = "";
+
+async function openQuickAdd(url) {
+  _quickAddTags = [];
+  _quickAddUrl = url;
+  _quickAddTitle = "";
+  renderQuickAddTags();
+  document.getElementById("quick-add-note").value = "";
+  document.getElementById("quick-add-new-tag-row").style.display = "none";
+  document.getElementById("quick-add-new-tag").value = "";
+  document.getElementById("quick-add-form").style.display = "none";
+  document.getElementById("quick-add-loading").style.display = "";
+  document.getElementById("quick-add-modal").showModal();
+
+  const [metaRes, tagsRes] = await Promise.all([
+    fetch(`/api/metadata/preview?url=${encodeURIComponent(url)}`, { headers: headers() }),
+    fetch("/api/tags", { headers: headers() }),
+  ]);
+  const meta = metaRes.ok ? await metaRes.json() : {};
+  const allTags = tagsRes.ok ? await tagsRes.json() : [];
+
+  _quickAddTitle = meta.title || "";
+  document.getElementById("quick-add-favicon").src = meta.favicon_url || "";
+  document.getElementById("quick-add-title").textContent = meta.title || getDomain(url);
+  document.getElementById("quick-add-desc").textContent = meta.description || "";
+  document.getElementById("quick-add-desc").style.display = meta.description ? "" : "none";
+  document.getElementById("quick-add-url").textContent = url;
+
+  const sel = document.getElementById("quick-add-tag-select");
+  sel.innerHTML = '<option value="">— Add tag —</option><option value="__new__">＋ Add new tag</option>';
+  allTags.forEach(t => {
+    const opt = document.createElement("option");
+    opt.value = t.name;
+    opt.dataset.color = t.color;
+    opt.textContent = t.name;
+    sel.appendChild(opt);
+  });
+
+  document.getElementById("quick-add-loading").style.display = "none";
+  document.getElementById("quick-add-form").style.display = "flex";
+}
+
+function renderQuickAddTags() {
+  const el = document.getElementById("quick-add-tag-list");
+  el.innerHTML = _quickAddTags.map((t, i) => `
+    <span class="edit-tag-chip" style="background:color-mix(in srgb,${escHtml(t.color)} 18%,transparent);color:${escHtml(t.color)}">
+      ${escHtml(t.name)}
+      <button type="button" onclick="removeQuickAddTag(${i})" aria-label="Remove">×</button>
+    </span>
+  `).join("");
+}
+
+function handleQuickAddTagSelect(sel) {
+  const val = sel.value;
+  if (!val) return;
+  if (val === "__new__") {
+    document.getElementById("quick-add-new-tag-row").style.display = "flex";
+    setTimeout(() => document.getElementById("quick-add-new-tag").focus(), 50);
+    sel.value = "";
+    return;
+  }
+  const opt = sel.options[sel.selectedIndex];
+  const color = opt.dataset.color || "#6366f1";
+  if (!_quickAddTags.find(t => t.name === val)) {
+    _quickAddTags.push({ name: val, color });
+    renderQuickAddTags();
+  }
+  opt.remove();
+  sel.value = "";
+}
+
+function addNewQuickAddTags() {
+  const input = document.getElementById("quick-add-new-tag");
+  const names = input.value.split(",").map(s => s.trim()).filter(Boolean);
+  names.forEach(name => {
+    if (!_quickAddTags.find(t => t.name === name)) {
+      _quickAddTags.push({ name, color: "#6366f1" });
+    }
+  });
+  input.value = "";
+  document.getElementById("quick-add-new-tag-row").style.display = "none";
+  renderQuickAddTags();
+}
+
+function removeQuickAddTag(i) {
+  _quickAddTags.splice(i, 1);
+  renderQuickAddTags();
+}
+
+async function submitQuickAdd(e) {
+  e.preventDefault();
+  const btn = e.submitter;
+  btn.disabled = true;
+  btn.textContent = "Saving…";
+
+  const res = await fetch("/api/links", {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({ url: _quickAddUrl, tags: _quickAddTags.map(t => t.name) }),
+  });
+
+  if (res.ok) {
+    const { id } = await res.json();
+    const noteText = document.getElementById("quick-add-note").value.trim();
+    if (noteText && id) {
+      const noteRes = await fetch("/api/notes", {
+        method: "POST",
+        headers: headers(),
+        body: JSON.stringify({ title: _quickAddTitle || getDomain(_quickAddUrl), link_id: id }),
+      });
+      if (noteRes.ok) {
+        const note = await noteRes.json();
+        await fetch(`/api/notes/${note.id}`, {
+          method: "PATCH",
+          headers: headers(),
+          body: JSON.stringify({ content: `${_quickAddUrl}\n\n${noteText}` }),
+        });
+      }
+    }
+    document.getElementById("quick-add-modal").close();
+    toast("Saved to Tether!");
+    if (document.getElementById("links-container")) {
+      await Promise.all([loadLinks(), loadSidebarCats(), updateCounts()]);
+    }
+  } else {
+    toast("Failed to save link");
+  }
+
+  btn.disabled = false;
+  btn.textContent = "Save";
+}
+
 /* ── Add note from link ──────────────────────────────────── */
 async function addNoteFromLink(id) {
   const res = await fetch(`/api/links/${id}`, { headers: headers() });
@@ -1086,6 +1221,14 @@ document.addEventListener("DOMContentLoaded", () => {
   setView(currentView);
   loadSidebarCats();
   initSidebarResize();
+
+  const addUrl = new URLSearchParams(location.search).get("add");
+  if (addUrl) {
+    const clean = new URL(location.href);
+    clean.searchParams.delete("add");
+    history.replaceState({}, "", clean);
+    openQuickAdd(addUrl);
+  }
 
   if (document.getElementById("links-container")) {
     // activate filter from URL param

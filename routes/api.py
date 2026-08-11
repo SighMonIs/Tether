@@ -90,82 +90,96 @@ _OEMBED_PROVIDERS = [
 _INSTAGRAM_DOMAINS = ("instagram.com", "instagr.am")
 
 
+async def _scrape_metadata(url: str) -> dict:
+    parsed = httpx.URL(url)
+    domain = parsed.host
+    favicon = f"https://www.google.com/s2/favicons?domain={domain}&sz=32"
+    title = desc = None
+
+    async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+
+        # Resolve any short/redirect URLs first so oEmbed gets the canonical URL
+        try:
+            head = await client.head(url, headers=_BROWSER_HEADERS)
+            resolved_url = str(head.url)
+            resolved_domain = httpx.URL(resolved_url).host
+        except Exception:
+            resolved_url, resolved_domain = url, domain
+
+        # oEmbed providers (YouTube, TikTok)
+        for provider_domain, oembed_url in _OEMBED_PROVIDERS:
+            if provider_domain in resolved_domain:
+                oe = await client.get(
+                    oembed_url,
+                    params={"url": resolved_url, "format": "json"},
+                    headers=_BROWSER_HEADERS,
+                )
+                if oe.is_success:
+                    data = oe.json()
+                    title = data.get("title")
+                    desc = data.get("author_name")
+                break
+
+        if not title:
+            resp = await client.get(resolved_url, headers=_BROWSER_HEADERS)
+            soup = BeautifulSoup(resp.text, "html.parser")
+
+            # 1. Open Graph / Twitter meta tags
+            title = (
+                _meta(soup, property="og:title")
+                or _meta(soup, attrs={"name": "twitter:title"})
+            )
+            desc = (
+                _meta(soup, property="og:description")
+                or _meta(soup, attrs={"name": "twitter:description"})
+                or _meta(soup, attrs={"name": "description"})
+            )
+
+            # 2. JSON-LD structured data (MakerWorld, Reddit, news sites, etc.)
+            if not title:
+                title, ld_desc = _json_ld(soup)
+                if not desc:
+                    desc = ld_desc
+
+            # 3. Plain <title> tag last resort
+            if not title and soup.title:
+                title = soup.title.string.strip()
+
+            # Instagram serves a login wall with no usable meta tags; fall
+            # back to a generic label instead of the bare "Instagram" title.
+            if any(d in resolved_domain for d in _INSTAGRAM_DOMAINS) and (
+                not title or title.strip().lower() == "instagram"
+            ):
+                title = "Instagram reel" if "/reel/" in resolved_url else "Instagram post"
+                desc = None
+
+    return {
+        "title": title and title.strip()[:500],
+        "description": desc and desc.strip()[:1000],
+        "favicon_url": favicon,
+    }
+
+
 async def _fetch_metadata(link_id: str, url: str):
     try:
-        parsed = httpx.URL(url)
-        domain = parsed.host
-        favicon = f"https://www.google.com/s2/favicons?domain={domain}&sz=32"
-        title = desc = None
-
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-
-            # Resolve any short/redirect URLs first so oEmbed gets the canonical URL
-            try:
-                head = await client.head(url, headers=_BROWSER_HEADERS)
-                resolved_url = str(head.url)
-                resolved_domain = httpx.URL(resolved_url).host
-            except Exception:
-                resolved_url, resolved_domain = url, domain
-
-            # oEmbed providers (YouTube, TikTok)
-            for provider_domain, oembed_url in _OEMBED_PROVIDERS:
-                if provider_domain in resolved_domain:
-                    oe = await client.get(
-                        oembed_url,
-                        params={"url": resolved_url, "format": "json"},
-                        headers=_BROWSER_HEADERS,
-                    )
-                    if oe.is_success:
-                        data = oe.json()
-                        title = data.get("title")
-                        desc = data.get("author_name")
-                    break
-
-            if not title:
-                resp = await client.get(resolved_url, headers=_BROWSER_HEADERS)
-                soup = BeautifulSoup(resp.text, "html.parser")
-
-                # 1. Open Graph / Twitter meta tags
-                title = (
-                    _meta(soup, property="og:title")
-                    or _meta(soup, attrs={"name": "twitter:title"})
-                )
-                desc = (
-                    _meta(soup, property="og:description")
-                    or _meta(soup, attrs={"name": "twitter:description"})
-                    or _meta(soup, attrs={"name": "description"})
-                )
-
-                # 2. JSON-LD structured data (MakerWorld, Reddit, news sites, etc.)
-                if not title:
-                    title, ld_desc = _json_ld(soup)
-                    if not desc:
-                        desc = ld_desc
-
-                # 3. Plain <title> tag last resort
-                if not title and soup.title:
-                    title = soup.title.string.strip()
-
-                # Instagram serves a login wall with no usable meta tags; fall
-                # back to a generic label instead of the bare "Instagram" title.
-                if any(d in resolved_domain for d in _INSTAGRAM_DOMAINS) and (
-                    not title or title.strip().lower() == "instagram"
-                ):
-                    title = "Instagram reel" if "/reel/" in resolved_url else "Instagram post"
-                    desc = None
-
+        meta = await _scrape_metadata(url)
         with db() as conn:
             conn.execute(
                 "UPDATE links SET title=?, description=?, favicon_url=? WHERE id=?",
-                (
-                    title and title.strip()[:500],
-                    desc and desc.strip()[:1000],
-                    favicon,
-                    link_id,
-                ),
+                (meta["title"], meta["description"], meta["favicon_url"], link_id),
             )
     except Exception as exc:
         _log_error(f"metadata:{url}", exc)
+
+
+@router.get("/metadata/preview")
+async def preview_metadata(url: str, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    try:
+        return await _scrape_metadata(url)
+    except Exception as exc:
+        _log_error(f"metadata-preview:{url}", exc)
+        return {"title": None, "description": None, "favicon_url": None}
 
 
 # ── Bulk refresh state ────────────────────────────────────────────────────────

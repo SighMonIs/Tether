@@ -134,6 +134,43 @@
     </div>
   </dialog>
 
+  <dialog id="quick-add-modal" class="modal">
+    <div class="modal-content">
+      <h2>Save to Tether</h2>
+      <div id="quick-add-loading" class="quick-add-loading">Fetching page info…</div>
+      <form id="quick-add-form" onsubmit="submitQuickAdd(event)" style="display:none">
+        <div class="quick-add-preview">
+          <img id="quick-add-favicon" class="favicon" src="" alt="" onerror="this.style.display='none'">
+          <div class="quick-add-preview-text">
+            <div id="quick-add-title" class="quick-add-title"></div>
+            <div id="quick-add-desc" class="quick-add-desc"></div>
+            <div id="quick-add-url" class="quick-add-url"></div>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Tags</label>
+          <div id="quick-add-tag-list" class="edit-tag-list"></div>
+          <select id="quick-add-tag-select" class="edit-tag-select" onchange="handleQuickAddTagSelect(this)">
+            <option value="">— Add tag —</option>
+            <option value="__new__">＋ Add new tag</option>
+          </select>
+          <div id="quick-add-new-tag-row" class="edit-tag-add" style="display:none">
+            <input type="text" id="quick-add-new-tag" placeholder="New tags, comma-separated" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewQuickAddTags();}">
+            <button type="button" onclick="addNewQuickAddTags()">Add</button>
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="quick-add-note">Note <span class="form-note" style="text-transform:none;letter-spacing:normal;font-weight:400">(optional)</span></label>
+          <textarea id="quick-add-note" class="import-textarea" placeholder="Add a note about this link…" rows="3"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button type="button" class="btn-ghost" onclick="document.getElementById('quick-add-modal').close()">Cancel</button>
+          <button type="submit" class="btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
   <dialog id="confirm-modal" class="modal">
     <div class="modal-content">
       <p id="confirm-modal-msg" style="margin-bottom:1.25rem;line-height:1.5"></p>
