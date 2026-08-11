@@ -52,6 +52,7 @@ function setShowingLinks(on, persist = true) {
 
 if (toolbarHidden) toolbarEl.style.display = "none";
 linksTabBtn.addEventListener("click", () => setShowingLinks(true));
+window.setShowingLinks = setShowingLinks;
 
 if (localStorage.getItem("activeTab") === "links") setShowingLinks(true, false);
 

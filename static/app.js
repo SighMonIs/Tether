@@ -889,9 +889,8 @@ async function submitQuickAdd(e) {
     }
     document.getElementById("quick-add-modal").close();
     toast("Saved to Tether!");
-    if (document.getElementById("links-container")) {
-      await Promise.all([loadLinks(), loadSidebarCats(), updateCounts()]);
-    }
+    window.setShowingLinks?.(true);
+    await Promise.all([loadLinks(), loadSidebarCats(), updateCounts()]);
   } else {
     toast("Failed to save link");
   }
