@@ -1276,7 +1276,7 @@ h1 { font-size: 1.6rem; font-weight: 700; }
 }
 .modal-content h2 { font-size: 1.1rem; }
 
-#add-link-form, #edit-form, #import-links-form {
+#add-link-form, #edit-form, #import-links-form, #quick-add-form {
   display: flex;
   flex-direction: column;
   gap: 1rem;
