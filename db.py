@@ -7,6 +7,12 @@ from contextlib import contextmanager
 _data_dir = Path(os.environ.get("TETHER_DATA", Path(__file__).parent))
 DB_PATH = _data_dir / "tether.db"
 NOTES_DIR = _data_dir / "notes"
+PICTURES_DIR = _data_dir / "pictures"
+
+# A content type is a user-named bucket inside a category, e.g. Cooking > "Vegan".
+# A folder is just a content type of kind 'folders' — because an item may belong to
+# many content types, folder membership reuses the same join tables.
+CONTENT_KINDS = ("links", "notes", "pictures", "folders")
 
 
 def get_conn():
@@ -55,12 +61,6 @@ def init_db():
                 read_at      TEXT
             );
 
-            CREATE TABLE IF NOT EXISTS link_tags (
-                link_id TEXT NOT NULL REFERENCES links(id) ON DELETE CASCADE,
-                tag_id  INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
-                PRIMARY KEY (link_id, tag_id)
-            );
-
             CREATE VIRTUAL TABLE IF NOT EXISTS links_fts USING fts5(
                 id UNINDEXED,
                 url,
@@ -96,6 +96,40 @@ def init_db():
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS content_types (
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                tag_id   INTEGER NOT NULL REFERENCES tags(id) ON DELETE CASCADE,
+                kind     TEXT    NOT NULL,
+                title    TEXT    NOT NULL,
+                position INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE INDEX IF NOT EXISTS content_types_tag ON content_types(tag_id);
+
+            CREATE TABLE IF NOT EXISTS pictures (
+                id            TEXT PRIMARY KEY,
+                filename      TEXT NOT NULL,
+                original_name TEXT,
+                mime          TEXT,
+                size          INTEGER,
+                created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS link_content_types (
+                link_id         TEXT    NOT NULL REFERENCES links(id) ON DELETE CASCADE,
+                content_type_id INTEGER NOT NULL REFERENCES content_types(id) ON DELETE CASCADE,
+                PRIMARY KEY (link_id, content_type_id)
+            );
+            CREATE TABLE IF NOT EXISTS note_content_types (
+                note_id         TEXT    NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+                content_type_id INTEGER NOT NULL REFERENCES content_types(id) ON DELETE CASCADE,
+                PRIMARY KEY (note_id, content_type_id)
+            );
+            CREATE TABLE IF NOT EXISTS picture_content_types (
+                picture_id      TEXT    NOT NULL REFERENCES pictures(id) ON DELETE CASCADE,
+                content_type_id INTEGER NOT NULL REFERENCES content_types(id) ON DELETE CASCADE,
+                PRIMARY KEY (picture_id, content_type_id)
+            );
         """)
 
         # Migrations for existing databases
@@ -113,6 +147,8 @@ def init_db():
             )
 
         NOTES_DIR.mkdir(parents=True, exist_ok=True)
+        PICTURES_DIR.mkdir(parents=True, exist_ok=True)
+        _migrate_to_content_types(conn)
 
         # Generate UUID on first run
         existing = conn.execute("SELECT value FROM settings WHERE key='uuid'").fetchone()
@@ -122,6 +158,56 @@ def init_db():
                 (str(uuid.uuid4()),)
             )
 
+
+
+def _migrate_to_content_types(conn):
+    """Give every existing category a Links and a Notes content type and move its
+    items across. Lossless: link_tags is many-to-many and so is the replacement,
+    so a link in two categories lands in both categories' Links type."""
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if "link_tags" not in tables:
+        _ensure_link_tags_view(conn)
+        return  # already migrated
+
+    for tag in conn.execute("SELECT id FROM tags").fetchall():
+        made = {}
+        for pos, kind in enumerate(("links", "notes")):
+            row = conn.execute(
+                "SELECT id FROM content_types WHERE tag_id=? AND kind=?", (tag["id"], kind)
+            ).fetchone()
+            if row:
+                made[kind] = row["id"]
+                continue
+            cur = conn.execute(
+                "INSERT INTO content_types(tag_id, kind, title, position) VALUES (?,?,?,?)",
+                (tag["id"], kind, kind.capitalize(), pos),
+            )
+            made[kind] = cur.lastrowid
+
+        conn.execute(
+            "INSERT OR IGNORE INTO link_content_types(link_id, content_type_id) "
+            "SELECT link_id, ? FROM link_tags WHERE tag_id=?",
+            (made["links"], tag["id"]),
+        )
+        conn.execute(
+            "INSERT OR IGNORE INTO note_content_types(note_id, content_type_id) "
+            "SELECT id, ? FROM notes WHERE tag_id=?",
+            (made["notes"], tag["id"]),
+        )
+
+    # link_tags is now derived from content_types, so drop the second source of
+    # truth and expose the same shape as a view — every read query still works.
+    conn.execute("DROP TABLE link_tags")
+    _ensure_link_tags_view(conn)
+
+
+def _ensure_link_tags_view(conn):
+    conn.execute("""
+        CREATE VIEW IF NOT EXISTS link_tags AS
+        SELECT lct.link_id AS link_id, ct.tag_id AS tag_id
+        FROM link_content_types lct
+        JOIN content_types ct ON ct.id = lct.content_type_id
+    """)
 
 
 def get_setting(key: str) -> str | None:

@@ -6,7 +6,7 @@ import TaskList from "https://esm.sh/@tiptap/extension-task-list@2.27.2?deps=@ti
 import TaskItem from "https://esm.sh/@tiptap/extension-task-item@2.27.2?deps=@tiptap/core@2.27.2";
 import Placeholder from "https://esm.sh/@tiptap/extension-placeholder@2.27.2?deps=@tiptap/core@2.27.2";
 import { Markdown } from "https://esm.sh/tiptap-markdown@0.9.0?deps=@tiptap/core@2.27.2";
-import { createSlashCommand } from "/static/slash-commands.js?v=003";
+import { createSlashCommand } from "/static/slash-commands.js?v=007";
 
 const uuidMeta = document.querySelector('meta[name="tether-uuid"]');
 const TETHER_UUID = uuidMeta ? uuidMeta.content : "";
@@ -26,58 +26,59 @@ const titleInput = document.getElementById("note-title-input");
 const editorMount = document.getElementById("note-editor");
 const statusEl = document.getElementById("notes-save-status");
 const toolbarEl = document.getElementById("notes-toolbar");
+const bubbleEl = document.getElementById("bubble-toolbar");
+const linkBarEl = document.getElementById("link-toolbar");
 const categoryBtn = document.getElementById("note-category-btn");
 const categoryModal = document.getElementById("note-category-modal");
 const categorySelect = document.getElementById("note-category-select");
 const categoryForm = document.getElementById("note-category-form");
 
-const linksTabBtn = document.getElementById("tab-links-btn");
+const urlParams = new URLSearchParams(location.search);
+
+const overviewView = document.getElementById("overview-view");
+const ctView = document.getElementById("ct-view");
+const backBtn = document.getElementById("note-back-btn");
+const notesListView = document.getElementById("notes-list-view");
 const noteView = document.getElementById("note-editor-view");
-const linksToolbar = document.getElementById("links-toolbar");
 const linksView = document.getElementById("links-view");
 
 const toolbarHidden = localStorage.getItem("notesToolbarHidden") === "1";
 
-function setShowingLinks(on, persist = true) {
-  toolbarEl.style.display = (on || toolbarHidden) ? "none" : "";
-  noteView.style.display = on ? "none" : "";
-  linksToolbar.style.display = on ? "" : "none";
-  linksView.style.display = on ? "" : "none";
-  linksTabBtn.classList.toggle("active", on);
-  listEl.querySelectorAll(".notes-list-item").forEach(el => {
-    el.classList.toggle("active", !on && el.dataset.id === String(currentNoteId));
+let currentView = "all";  // "all" | "links" | "notes" | "editor"
+
+let noteQuery = "";
+const searchInput = document.getElementById("search-input");
+if (searchInput) {
+  searchInput.addEventListener("input", () => {
+    noteQuery = searchInput.value.trim().toLowerCase();
+    renderList();
   });
-  if (persist) localStorage.setItem("activeTab", on ? "links" : "notes");
 }
 
-if (toolbarHidden) toolbarEl.style.display = "none";
-linksTabBtn.addEventListener("click", () => setShowingLinks(true));
-window.setShowingLinks = setShowingLinks;
+function setView(v, persist = true) {
+  currentView = v;
+  const editing = v === "editor";
+  toolbarEl.style.display = (editing && !toolbarHidden) ? "" : "none";
+  noteView.style.display = editing ? "" : "none";
+  overviewView.style.display = v === "all" ? "" : "none";
+  if (ctView) ctView.style.display = v === "ct" ? "" : "none";
+  notesListView.style.display = v === "notes" ? "" : "none";
+  linksView.style.display = v === "links" ? "" : "none";
+  listEl.querySelectorAll(".notes-list-item").forEach(el => {
+    el.classList.toggle("active", editing && el.dataset.id === String(currentNoteId));
+  });
+  if (!editing) { hideBubble(); hideLinkBar(); }
+  if (v === "notes" || editing) renderList();
+  if (v === "all") renderOverview();
+  if (v === "ct") window.renderContentTypeView?.(urlParams.get("ct"));
+}
 
-if (localStorage.getItem("activeTab") === "links") setShowingLinks(true, false);
+backBtn.addEventListener("click", () => { saveCurrentNote(); setView("notes"); });
+// app.js still calls this after a quick-add save
+window.setShowingLinks = on => setView(on ? "links" : "notes");
 
-const urlParams = new URLSearchParams(location.search);
 const filterTagId = urlParams.get("tag") ? Number(urlParams.get("tag")) : null;
 const filterUncategorised = urlParams.get("uncategorised") === "true";
-
-const sidebarTagsNav = document.getElementById("sidebar-tags-nav");
-const categoryTrigger = document.getElementById("sidebar-category-trigger");
-const categoryLabel = document.getElementById("sidebar-category-label");
-let showingTagsPanel = false;
-
-categoryTrigger.addEventListener("click", () => {
-  showingTagsPanel = !showingTagsPanel;
-  sidebarTagsNav.style.display = showingTagsPanel ? "" : "none";
-  categoryTrigger.classList.toggle("open", showingTagsPanel);
-});
-
-document.addEventListener("click", ev => {
-  if (!showingTagsPanel) return;
-  if (ev.target.closest(".sidebar-category-wrap")) return;
-  showingTagsPanel = false;
-  sidebarTagsNav.style.display = "none";
-  categoryTrigger.classList.remove("open");
-});
 
 let currentNoteId = null;
 let saveTimeout = null;
@@ -94,7 +95,18 @@ const COMMANDS = {
   underline: e => e.chain().focus().toggleUnderline().run(),
   strike: e => e.chain().focus().toggleStrike().run(),
   code: e => e.chain().focus().toggleCode().run(),
-  paragraph: e => e.chain().focus().setParagraph().run(),
+  // strips the whole current block back to plain body text, marks included
+  paragraph: e => {
+    const { $from } = e.state.selection;
+    const from = $from.start();
+    const to = $from.end();
+    return e.chain().focus()
+      .setTextSelection({ from, to })
+      .clearNodes()
+      .unsetAllMarks()
+      .setTextSelection(e.state.selection.empty ? to : { from, to })
+      .run();
+  },
   heading1: e => e.chain().focus().toggleHeading({ level: 1 }).run(),
   heading2: e => e.chain().focus().toggleHeading({ level: 2 }).run(),
   heading3: e => e.chain().focus().toggleHeading({ level: 3 }).run(),
@@ -149,11 +161,128 @@ const ACTIVE_CHECKS = {
 };
 
 function updateToolbarState() {
-  toolbarEl.querySelectorAll("[data-cmd]").forEach(btn => {
-    const check = ACTIVE_CHECKS[btn.dataset.cmd];
-    btn.classList.toggle("active", check ? check(editor) : false);
-  });
+  const bars = [toolbarEl, bubbleEl].filter(Boolean);
+  for (const bar of bars) {
+    bar.querySelectorAll("[data-cmd]").forEach(btn => {
+      const check = ACTIVE_CHECKS[btn.dataset.cmd];
+      btn.classList.toggle("active", check ? check(editor) : false);
+    });
+  }
+  positionBubble();
+  positionLinkBar();
 }
+
+/* ── Selection bubble ────────────────────────────────────── */
+function hideBubble() {
+  if (bubbleEl) bubbleEl.classList.remove("open");
+}
+
+function positionBubble() {
+  if (!bubbleEl) return;
+  const { from, to, empty } = editor.state.selection;
+  if (empty || from === to || !editor.isFocused) return hideBubble();
+
+  const sel = window.getSelection();
+  if (!sel || sel.rangeCount === 0 || sel.isCollapsed) return hideBubble();
+  const rect = sel.getRangeAt(0).getBoundingClientRect();
+  if (!rect || (!rect.width && !rect.height)) return hideBubble();
+
+  bubbleEl.classList.add("open");
+  const w = bubbleEl.offsetWidth;
+  const h = bubbleEl.offsetHeight;
+  const top = rect.top - h - 8 < 8 ? rect.bottom + 8 : rect.top - h - 8;
+  const left = Math.min(
+    Math.max(8, rect.left + rect.width / 2 - w / 2),
+    window.innerWidth - w - 8
+  );
+  bubbleEl.style.top = `${top}px`;
+  bubbleEl.style.left = `${left}px`;
+}
+
+/* ── Link bar ────────────────────────────────────────────── */
+function hideLinkBar() {
+  if (linkBarEl) linkBarEl.classList.remove("open");
+}
+
+// place a bar against `rect`, above it when there is room, else below
+function placeBar(el, rect) {
+  const w = el.offsetWidth;
+  const h = el.offsetHeight;
+  const top = rect.top - h - 8 < 8 ? rect.bottom + 8 : rect.top - h - 8;
+  el.style.top = `${top}px`;
+  el.style.left = `${Math.min(Math.max(8, rect.left), window.innerWidth - w - 8)}px`;
+}
+
+function positionLinkBar() {
+  if (!linkBarEl) return;
+  // only for a plain caret inside a link — a real selection gets the format bubble
+  if (!editor.state.selection.empty || !editor.isFocused || !editor.isActive("link")) {
+    return hideLinkBar();
+  }
+  const href = editor.getAttributes("link").href || "";
+  if (!href) return hideLinkBar();
+
+  const urlEl = document.getElementById("link-bar-url");
+  urlEl.textContent = href;
+  urlEl.title = href;
+  linkBarEl.dataset.href = href;
+  linkBarEl.classList.add("open");
+
+  const sel = window.getSelection();
+  const node = sel && sel.anchorNode;
+  const el = node && (node.nodeType === 1 ? node : node.parentElement);
+  const anchor = el && el.closest ? el.closest("a") : null;
+  const rect = anchor ? anchor.getBoundingClientRect()
+             : (sel && sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : null);
+  if (!rect) return hideLinkBar();
+  placeBar(linkBarEl, rect);
+}
+
+function initLinkBar() {
+  if (!linkBarEl) return;
+  linkBarEl.addEventListener("mousedown", e => e.preventDefault());
+  // COMMANDS.link prompts with the current href and re-applies it over the whole mark.
+  // prompt() blurs the editor, so refocus past the blur guard before repositioning.
+  document.getElementById("link-bar-edit").addEventListener("click", () => {
+    COMMANDS.link(editor);
+    setTimeout(() => {
+      // setLink leaves the whole mark selected; collapse back inside it so the
+      // link bar (not the format bubble) is what comes back
+      const { from, to } = editor.state.selection;
+      editor.chain().focus().setTextSelection(Math.min(from + 1, to)).run();
+      positionLinkBar();
+    }, 200);
+  });
+  document.getElementById("link-bar-open").addEventListener("click", () => {
+    const href = linkBarEl.dataset.href;
+    if (href) window.open(href, "_blank", "noopener");
+  });
+  document.getElementById("link-bar-remove").addEventListener("click", () => {
+    editor.chain().focus().extendMarkRange("link").unsetLink().run();
+    hideLinkBar();
+  });
+  editor.on("blur", () => setTimeout(() => { if (!editor.isFocused) hideLinkBar(); }, 120));
+  document.addEventListener("scroll", () => hideLinkBar(), true);
+  window.addEventListener("resize", hideLinkBar);
+}
+
+function initBubbleToolbar() {
+  if (!bubbleEl) return;
+  // mousedown would clear the selection before the command runs
+  bubbleEl.addEventListener("mousedown", e => e.preventDefault());
+  bubbleEl.addEventListener("click", e => {
+    const btn = e.target.closest("[data-cmd]");
+    if (!btn || !currentNoteId) return;
+    COMMANDS[btn.dataset.cmd]?.(editor);
+    updateToolbarState();
+  });
+  editor.on("blur", () => setTimeout(() => { if (!editor.isFocused) hideBubble(); }, 120));
+  document.addEventListener("scroll", () => hideBubble(), true);
+  window.addEventListener("resize", hideBubble);
+}
+
+initBubbleToolbar();
+initLinkBar();
 
 toolbarEl.addEventListener("click", e => {
   const btn = e.target.closest("[data-cmd]");
@@ -203,13 +332,9 @@ async function loadTags() {
 
   if (filterTagId) {
     const tag = allTags.find(t => t.id === filterTagId);
-    if (tag) {
-      window.setPageTitle?.(tag.name);
-      categoryLabel.innerHTML = `<span class="sidebar-cat-dot" style="background:${escHtml(tag.color)}"></span>${escHtml(tag.name)}`;
-    }
+    if (tag) window.setPageTitle?.(tag.name);
   } else if (filterUncategorised) {
     window.setPageTitle?.("Untagged");
-    categoryLabel.textContent = "Untagged";
   }
 }
 
@@ -238,6 +363,7 @@ async function saveCurrentNote() {
       const idx = notesCache.findIndex(n => n.id === note.id);
       if (idx !== -1) notesCache[idx] = note;
       renderList();
+      window.reloadSidebarNotes?.();
       statusEl.textContent = "Saved";
     } else {
       statusEl.textContent = "Save failed";
@@ -264,12 +390,13 @@ listEl.addEventListener("dragover", ev => {
 function renderList() {
   listEl.innerHTML = "";
   const historyMode = !filterTagId && !filterUncategorised;
-  const notes = historyMode
+  let notes = historyMode
     ? [...notesCache].sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
     : notesCache;
+  if (noteQuery) notes = notes.filter(n => (n.title || "Untitled").toLowerCase().includes(noteQuery));
   for (const note of notes) {
     const item = document.createElement("div");
-    const isActive = note.id === currentNoteId && !linksTabBtn.classList.contains("active");
+    const isActive = note.id === currentNoteId && currentView === "editor";
     item.className = "notes-list-item" + (isActive ? " active" : "");
     item.dataset.id = note.id;
     item.draggable = !historyMode;
@@ -280,7 +407,7 @@ function renderList() {
       <span class="notes-list-title">${escHtml(note.title || "Untitled")}</span>
       <div class="row-menu-wrap">
         <button class="row-overflow" title="More" type="button">
-          <i data-lucide="ellipsis"></i>
+          <i data-lucide="ellipsis-vertical"></i>
         </button>
         <div class="row-menu">
           <button type="button" class="row-menu-item" data-action="category">
@@ -326,12 +453,100 @@ function renderList() {
     });
     listEl.appendChild(item);
   }
+  if (!notes.length) {
+    listEl.innerHTML = `<div class="empty-state">${noteQuery ? "No notes match that search." : "No notes yet."}</div>`;
+  }
   if (window.lucide) lucide.createIcons();
 }
 
+/* ── Overview ("All") ────────────────────────────────────── */
+async function renderOverview() {
+  if (filterTagId) return renderCategoryOverview();
+  return renderRootOverview();
+}
+
+// inside a category: one section per content type, five most recent each
+async function renderCategoryOverview() {
+  const pane = document.querySelector(".overview-pane");
+  if (!pane) return;
+  const res = await fetch(`/api/content-types?tag=${filterTagId}`, { headers: authHeaders(false) });
+  const types = res.ok ? await res.json() : [];
+  if (!types.length) {
+    pane.innerHTML = `<div class="ov-empty">No content types yet — add one from the sidebar.</div>`;
+    return;
+  }
+  const blocks = await Promise.all(types.map(async ct => {
+    const r = await fetch(`/api/content-types/${ct.id}/items`, { headers: authHeaders(false) });
+    const d = r.ok ? await r.json() : { links: [], notes: [], pictures: [] };
+    const rows = [
+      ...d.links.map(l => ({ html: window.linkCardHtml(l), at: l.created_at })),
+      ...d.notes.map(n => ({
+        html: `<div class="ov-row" data-note="${n.id}">
+                 <span class="ov-title">${escHtml(n.title || "Untitled")}</span>
+                 <span class="ov-date">${window.friendlyDate(n.updated_at)}</span>
+               </div>`, at: n.updated_at })),
+    ].sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 5);
+    const pics = d.pictures.slice(0, 5).map(pic =>
+      `<img class="ov-thumb" src="/api/pictures/${pic.id}/file" alt="" loading="lazy">`).join("");
+    const body = (rows.map(r => r.html).join("") + (pics ? `<div class="ov-thumbs">${pics}</div>` : ""))
+      || `<div class="ov-empty">Nothing in here yet.</div>`;
+    return `
+      <section class="ov-section">
+        <div class="ov-header">
+          <span class="ov-label">${escHtml(ct.title)}</span>
+          <a class="ov-viewall" href="/?tag=${filterTagId}&ct=${ct.id}">View all</a>
+        </div>
+        ${body}
+      </section>`;
+  }));
+  pane.innerHTML = blocks.join("");
+  pane.querySelectorAll("[data-note]").forEach(row => {
+    row.addEventListener("click", () => openNote(row.dataset.note));
+  });
+  window.bindLinkRowMenus?.(pane);
+  if (window.lucide) lucide.createIcons();
+}
+
+async function renderRootOverview() {
+  const notes = [...notesCache]
+    .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
+    .slice(0, 5);
+  document.getElementById("ov-notes").innerHTML = notes.length
+    ? notes.map(n => `
+      <div class="ov-row" data-note="${n.id}">
+        <span class="ov-title">${escHtml(n.title || "Untitled")}</span>
+        <span class="ov-date">${window.friendlyDate(n.updated_at)}</span>
+      </div>`).join("")
+    : `<div class="ov-empty">No notes yet.</div>`;
+  document.querySelectorAll("#ov-notes .ov-row").forEach(row => {
+    row.addEventListener("click", () => openNote(row.dataset.note));
+  });
+
+  const qs = new URLSearchParams();
+  if (filterTagId) qs.set("tag", filterTagId);
+  if (filterUncategorised) qs.set("uncategorised", "true");
+  const res = await fetch(`/api/links${qs.toString() ? "?" + qs : ""}`, { headers: authHeaders(false) });
+  const links = (res.ok ? await res.json() : []).slice(0, 5);
+  const ovLinks = document.getElementById("ov-links");
+  ovLinks.innerHTML = links.length
+    ? links.map(l => window.linkCardHtml(l)).join("")
+    : `<div class="ov-empty">No links yet.</div>`;
+  window.bindLinkRowMenus?.(ovLinks);
+  if (window.lucide) lucide.createIcons();
+}
+
+// navigate so the URL carries the view and Back returns to the overview
+document.querySelectorAll(".ov-viewall").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const qs = new URLSearchParams(location.search);
+    qs.set("type", btn.dataset.goto);
+    location.search = qs.toString();
+  });
+});
+
 async function openNote(id, switchTab = true) {
-  if (switchTab && linksTabBtn.classList.contains("active")) setShowingLinks(false);
-  if (id === currentNoteId) return true;
+  if (switchTab) setView("editor");
+  if (id === currentNoteId) { renderList(); return true; }
   const res = await fetch(`/api/notes/${id}`, { headers: authHeaders(false) });
   if (!res.ok) return false;
   const note = await res.json();
@@ -395,18 +610,14 @@ async function deleteNote(id) {
   notesCache = notesCache.filter(n => n.id !== id);
   if (id === currentNoteId) {
     currentNoteId = null;
-    if (notesCache.length) {
-      await openNote(notesCache[0].id);
-    } else {
-      suppressDirty = true;
-      titleInput.value = "";
-      editor.commands.setContent("");
-      setTimeout(() => { suppressDirty = false; }, 0);
-      renderList();
-    }
-  } else {
-    renderList();
+    suppressDirty = true;
+    titleInput.value = "";
+    editor.commands.setContent("");
+    setTimeout(() => { suppressDirty = false; }, 0);
+    setView("notes");
   }
+  renderList();
+  window.reloadSidebarNotes?.();
 }
 
 async function loadNotes() {
@@ -415,18 +626,22 @@ async function loadNotes() {
   if (filterUncategorised) qs.set("uncategorised", "true");
   const res = await fetch(`/api/notes${qs.toString() ? "?" + qs : ""}`, { headers: authHeaders(false) });
   notesCache = res.ok ? await res.json() : [];
+  currentNoteId = null;
+  suppressDirty = true;
+  titleInput.value = "";
+  editor.commands.setContent("");
+  setTimeout(() => { suppressDirty = false; }, 0);
+  statusEl.textContent = "";
   renderList();
-  if (notesCache.length) {
-    await openNote(notesCache[0].id, false);
-  } else {
-    currentNoteId = null;
-    suppressDirty = true;
-    titleInput.value = "";
-    editor.commands.setContent("");
-    setTimeout(() => { suppressDirty = false; }, 0);
-    statusEl.textContent = "";
-  }
+  if (currentView === "all") renderOverview();
 }
+
+// runs last: setView() calls renderList(), which reads the consts declared above
+// ?ct= opens one of the user's content types; otherwise ?type= picks a built-in
+// view and everything falls back to the category overview
+const typeParam = urlParams.get("type");
+setView(urlParams.get("ct") ? "ct"
+  : ["all", "links", "notes"].includes(typeParam) ? typeParam : "all");
 
 (async () => {
   await loadTags();

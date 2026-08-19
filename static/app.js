@@ -44,8 +44,8 @@ if (savedSidebarWidth) {
 function initSidebarResize() {
   const handle = document.getElementById("sidebar-resize-handle");
   if (!handle) return;
-  const MIN_WIDTH = 220;
-  const MAX_WIDTH = 500;
+  const MIN_WIDTH = 180;
+  const MAX_WIDTH = 420;
 
   handle.addEventListener("mousedown", e => {
     e.preventDefault();
@@ -70,10 +70,15 @@ function initSidebarResize() {
     document.addEventListener("mousemove", onMouseMove);
     document.addEventListener("mouseup", onMouseUp);
   });
+
+  // double click resets: drop the override and let the stylesheet default win
+  handle.addEventListener("dblclick", () => {
+    document.documentElement.style.removeProperty("--sidebar-w");
+    localStorage.removeItem("sidebarWidth");
+  });
 }
 
 /* global state */
-let currentView = localStorage.getItem("view") || "cards";
 let currentTag = null;
 let currentUnread = null;
 let currentRead = null;
@@ -97,15 +102,6 @@ function toast(msg, duration = 2200) {
   el.textContent = msg;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), duration);
-}
-
-/* ── View toggle ─────────────────────────────────────────── */
-function setView(v) {
-  currentView = v;
-  localStorage.setItem("view", v);
-  document.getElementById("btn-cards")?.classList.toggle("active", v === "cards");
-  document.getElementById("btn-table")?.classList.toggle("active", v === "table");
-  renderCurrentLinks();
 }
 
 /* ── Fetch links ─────────────────────────────────────────── */
@@ -136,11 +132,7 @@ async function loadLinks() {
 }
 
 function renderCurrentLinks() {
-  if (currentView === "table") {
-    renderTable(_cachedLinks);
-  } else {
-    renderCards(_cachedLinks);
-  }
+  renderCards(_cachedLinks);
 }
 
 async function updateCounts() {
@@ -156,7 +148,7 @@ async function updateCounts() {
 /* ── Render helpers ──────────────────────────────────────── */
 function tagPills(tags) {
   return tags.map(t =>
-    `<span class="tag-pill" style="background:color-mix(in srgb,${t.color} 18%,transparent);color:${t.color}">${escHtml(t.name)}</span>`
+    `<span class="tag-pill" style="border:1px solid color-mix(in srgb,${t.color} 45%,transparent);color:${t.color}">${escHtml(t.name)}</span>`
   ).join("");
 }
 
@@ -164,6 +156,7 @@ function escHtml(s) {
   return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
+window.friendlyDate = friendlyDate;
 function friendlyDate(iso) {
   const d = new Date(iso + "Z");
   const now = new Date();
@@ -179,90 +172,67 @@ function getDomain(url) {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
 }
 
+function linkCardHtml(link) {
+  const domain = escHtml(getDomain(link.url));
+  return `
+    <article class="link-row ${link.is_read ? "is-read" : ""}" data-id="${link.id}">
+      <span class="link-thumb">
+        ${link.favicon_url ? `<img src="${escHtml(link.favicon_url)}" alt="" onerror="this.style.display='none'">` : ""}
+      </span>
+      <span class="link-main">
+        <a class="link-title" href="${escHtml(link.url)}" target="_blank" rel="noopener">${escHtml(link.title || domain)}</a>
+        <span class="link-url">${domain}</span>
+      </span>
+      <span class="link-meta">
+        <span class="card-tags">${tagPills(link.tags)}</span>
+        <span class="link-date">${friendlyDate(link.created_at)}</span>
+      </span>
+      <div class="row-menu-wrap">
+        <button class="row-overflow" type="button" title="More">
+          <i data-lucide="ellipsis-vertical"></i>
+        </button>
+        <div class="row-menu">
+          <button type="button" class="row-menu-item" onclick="toggleRead('${link.id}', ${!link.is_read})">
+            <i data-lucide="${link.is_read ? "eye" : "check"}"></i> Mark as ${link.is_read ? "unread" : "read"}
+          </button>
+          <button type="button" class="row-menu-item" onclick="openNoteForLink('${link.id}', ${link.note_id ? `'${link.note_id}'` : "null"})">
+            <i data-lucide="file-text"></i> ${link.note_id ? "Open note" : "Add note"}
+          </button>
+          <button type="button" class="row-menu-item" onclick="editLink('${link.id}')">
+            <i data-lucide="square-pen"></i> Edit
+          </button>
+          <button type="button" class="row-menu-item danger" onclick="deleteLink('${link.id}')">
+            <i data-lucide="trash-2"></i> Delete
+          </button>
+        </div>
+      </div>
+    </article>`;
+}
+
+window.linkCardHtml = linkCardHtml;
+window.bindLinkRowMenus = bindLinkRowMenus;
+
+function bindLinkRowMenus(root) {
+  root.querySelectorAll(".link-row .row-overflow").forEach(btn => {
+    btn.addEventListener("click", () => toggleRowMenu(btn));
+  });
+  root.querySelectorAll(".link-row .row-menu-item").forEach(btn => {
+    btn.addEventListener("click", () => closeRowMenus());
+  });
+}
+
 function renderCards(links) {
   const container = document.getElementById("links-container");
-  const table = document.getElementById("links-table");
   if (!container) return;
-  container.classList.remove("hidden");
   container.className = "cards-view";
-  table?.classList.add("hidden");
 
   if (!links.length) {
     container.innerHTML = '<div class="empty-state">No links yet. Send some from your iPhone!</div>';
     return;
   }
 
-  container.innerHTML = links.map(link => `
-    <article class="link-card ${link.is_read ? "is-read" : ""}" data-id="${link.id}">
-      <div class="card-header">
-        ${link.favicon_url ? `<img class="favicon" src="${escHtml(link.favicon_url)}" alt="" onerror="this.style.display='none'">` : ""}
-        <a class="card-title" href="${escHtml(link.url)}" target="_blank" rel="noopener">
-          ${escHtml(link.title || getDomain(link.url))}
-        </a>
-        <button class="icon-btn read-btn ${link.is_read ? "is-read" : ""}" title="${link.is_read ? "Mark unread" : "Mark as read"}" onclick="toggleRead('${link.id}', ${!link.is_read})">
-          <i data-lucide="${link.is_read ? "check" : "eye"}"></i>
-        </button>
-        <button class="icon-btn note-btn ${link.note_id ? "has-note" : ""}" title="${link.note_id ? "Open note" : "Add note"}" onclick="openNoteForLink('${link.id}', ${link.note_id ? `'${link.note_id}'` : "null"})">
-          <i data-lucide="file-text"></i>
-        </button>
-        <button class="icon-btn edit-btn" title="Edit" onclick="editLink('${link.id}')">
-          <i data-lucide="square-pen"></i>
-        </button>
-        <button class="icon-btn delete-btn" title="Delete" onclick="deleteLink('${link.id}')">
-          <i data-lucide="trash-2"></i>
-        </button>
-      </div>
-      ${link.description ? `<p class="card-desc">${escHtml(link.description)}</p>` : ""}
-      <div class="card-footer">
-        <span class="card-url">${escHtml(getDomain(link.url))}</span>
-        <span class="card-date">${friendlyDate(link.created_at)}</span>
-        <div class="card-tags">${tagPills(link.tags)}</div>
-      </div>
-    </article>
-  `).join("");
-  lucide.createIcons();
-}
-
-function renderTable(links) {
-  const container = document.getElementById("links-container");
-  const table = document.getElementById("links-table");
-  if (!table) return;
-  container?.classList.add("hidden");
-  table.classList.remove("hidden");
-
-  const tbody = table.querySelector("tbody");
-  if (!links.length) {
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;padding:3rem;color:var(--subtext)">No links yet.</td></tr>';
-    return;
-  }
-
-  tbody.innerHTML = links.map(link => `
-    <tr data-id="${link.id}" class="${link.is_read ? "is-read" : ""}">
-      <td class="row-favicon">
-        ${link.favicon_url ? `<img class="favicon" src="${escHtml(link.favicon_url)}" alt="" onerror="this.style.display='none'">` : ""}
-      </td>
-      <td class="row-title">
-        <a href="${escHtml(link.url)}" target="_blank" rel="noopener">${escHtml(link.title || getDomain(link.url))}</a>
-        <br><small>${escHtml(getDomain(link.url))}</small>
-      </td>
-      <td class="row-tags">${tagPills(link.tags)}</td>
-      <td class="row-date">${friendlyDate(link.created_at)}</td>
-      <td class="row-actions">
-        <button class="row-read-btn ${link.is_read ? "is-read" : ""}" title="${link.is_read ? "Mark unread" : "Mark as read"}" onclick="toggleRead('${link.id}', ${!link.is_read})">
-          <i data-lucide="${link.is_read ? "check" : "eye"}"></i>
-        </button>
-        <button class="row-icon-btn ${link.note_id ? "has-note" : ""}" title="${link.note_id ? "Open note" : "Add note"}" onclick="openNoteForLink('${link.id}', ${link.note_id ? `'${link.note_id}'` : "null"})">
-          <i data-lucide="file-text"></i>
-        </button>
-        <button class="row-icon-btn" title="Edit" onclick="editLink('${link.id}')">
-          <i data-lucide="square-pen"></i>
-        </button>
-        <button class="row-icon-btn danger" title="Delete" onclick="deleteLink('${link.id}')">
-          <i data-lucide="trash-2"></i>
-        </button>
-      </td>
-    </tr>
-  `).join("");
+  container.innerHTML = links.map(linkCardHtml).join("");
+  bindLinkRowMenus(container);
   lucide.createIcons();
 }
 
@@ -270,15 +240,29 @@ function renderTable(links) {
 function closeRowMenus() {
   document.querySelectorAll(".row-menu.open").forEach(m => m.classList.remove("open"));
 }
+// The menu is position:fixed so it never counts towards the scroll height of a
+// scrolling parent (the sidebar list), which otherwise grew a scrollbar when open.
 function toggleRowMenu(btn) {
   const menu = btn.nextElementSibling;
   const isOpen = menu.classList.contains("open");
   closeRowMenus();
-  if (!isOpen) menu.classList.add("open");
+  if (isOpen) return;
+  menu.classList.add("open");
+
+  const r = btn.getBoundingClientRect();
+  const h = menu.offsetHeight;
+  const w = menu.offsetWidth;
+  const below = r.bottom + 4;
+  const top = below + h > window.innerHeight ? r.top - h - 4 : below;
+  menu.style.top = `${Math.max(8, top)}px`;
+  menu.style.left = `${Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8))}px`;
 }
 document.addEventListener("click", e => {
   if (!e.target.closest(".row-menu-wrap")) closeRowMenus();
 });
+// a fixed menu would otherwise hang in place while its row scrolls away
+document.addEventListener("scroll", () => closeRowMenus(), true);
+window.addEventListener("resize", () => closeRowMenus());
 
 /* ── Actions ─────────────────────────────────────────────── */
 async function toggleRead(id, isRead) {
@@ -619,8 +603,8 @@ async function regenerateKey() {
 let _addLinkTags  = []; // [{name, color}]
 let _importTags   = []; // [{name, color}]
 
-async function openAddLink() {
-  _addLinkTags = [];
+async function openAddLink(preTag) {
+  _addLinkTags = preTag ? [preTag] : [];
   document.getElementById("add-link-url").value = "";
   document.getElementById("add-link-new-tag-row").style.display = "none";
   document.getElementById("add-link-new-tag").value = "";
@@ -702,7 +686,7 @@ function renderAddLinkTags() {
   const el = document.getElementById("add-link-tag-list");
   if (!el) return;
   el.innerHTML = _addLinkTags.map((t, i) => `
-    <span class="edit-tag-chip" style="background:color-mix(in srgb,${escHtml(t.color)} 18%,transparent);color:${escHtml(t.color)}">
+    <span class="edit-tag-chip" style="border:1px solid color-mix(in srgb,${escHtml(t.color)} 45%,transparent);color:${escHtml(t.color)}">
       ${escHtml(t.name)}
       <button type="button" onclick="removeAddLinkTag(${i})" aria-label="Remove">×</button>
     </span>
@@ -746,6 +730,8 @@ function removeAddLinkTag(i) {
   renderAddLinkTags();
 }
 
+let _pendingContentType = null;   // set when adding from inside a content type
+
 async function submitAddLink(e) {
   e.preventDefault();
   const url = document.getElementById("add-link-url").value.trim();
@@ -755,9 +741,22 @@ async function submitAddLink(e) {
     body: JSON.stringify({ url, tags: _addLinkTags.map(t => t.name) }),
   });
   if (res.ok) {
+    const { id } = await res.json();
+    if (_pendingContentType && id) {
+      await fetch(`/api/content-types/${_pendingContentType}/items`, {
+        method: "POST", headers: headers(),
+        body: JSON.stringify({ item_kind: "link", item_id: id }),
+      });
+    }
     document.getElementById("add-link-modal").close();
     toast("Link saved!");
-    if (document.getElementById("links-container")) {
+    const ct = _pendingContentType;
+    _pendingContentType = null;
+    if (ct) {
+      await loadContentTypes(_drillId);
+      renderSidebar();
+      renderContentTypeView(ct);
+    } else if (document.getElementById("links-container")) {
       await Promise.all([loadLinks(), loadSidebarCats(), updateCounts()]);
     } else {
       setTimeout(() => window.location.href = "/", 400);
@@ -813,7 +812,7 @@ async function openQuickAdd(url) {
 function renderQuickAddTags() {
   const el = document.getElementById("quick-add-tag-list");
   el.innerHTML = _quickAddTags.map((t, i) => `
-    <span class="edit-tag-chip" style="background:color-mix(in srgb,${escHtml(t.color)} 18%,transparent);color:${escHtml(t.color)}">
+    <span class="edit-tag-chip" style="border:1px solid color-mix(in srgb,${escHtml(t.color)} 45%,transparent);color:${escHtml(t.color)}">
       ${escHtml(t.name)}
       <button type="button" onclick="removeQuickAddTag(${i})" aria-label="Remove">×</button>
     </span>
@@ -955,7 +954,7 @@ function renderEditTags() {
   const el = document.getElementById("edit-tag-list");
   if (!el) return;
   el.innerHTML = _editTags.map((t, i) => `
-    <span class="edit-tag-chip" style="background:color-mix(in srgb,${escHtml(t.color)} 18%,transparent);color:${escHtml(t.color)}">
+    <span class="edit-tag-chip" style="border:1px solid color-mix(in srgb,${escHtml(t.color)} 45%,transparent);color:${escHtml(t.color)}">
       ${escHtml(t.name)}
       <button type="button" onclick="removeEditTag(${i})" aria-label="Remove">×</button>
     </span>
@@ -1015,7 +1014,7 @@ function renderImportTags() {
   const el = document.getElementById("import-tag-list");
   if (!el) return;
   el.innerHTML = _importTags.map((t, i) => `
-    <span class="edit-tag-chip" style="background:color-mix(in srgb,${escHtml(t.color)} 18%,transparent);color:${escHtml(t.color)}">
+    <span class="edit-tag-chip" style="border:1px solid color-mix(in srgb,${escHtml(t.color)} 45%,transparent);color:${escHtml(t.color)}">
       ${escHtml(t.name)}
       <button type="button" onclick="removeImportTag(${i})" aria-label="Remove">×</button>
     </span>
@@ -1109,6 +1108,309 @@ async function saveLink(e) {
 }
 
 /* ── Sidebar categories ──────────────────────────────────── */
+// Two states: the category list, and one category drilled down to its content
+// types. The drill is derived from the URL so a reload keeps you where you were.
+let _sidebarTags = [];
+let _uncatUnread = 0;
+let _drillId = null;   // null = list, "" = Untagged, otherwise a tag id (string)
+
+const KIND_ICON = {
+  links: "link", notes: "file-text", pictures: "image", folders: "folder",
+};
+const KIND_LABEL = {
+  links: "Links", notes: "Notes", pictures: "Pictures", folders: "Folder",
+};
+let _contentTypes = [];   // for the category currently drilled into
+let _drillCt = null;      // third level: a notes content type, listing its notes
+let _ctNotes = [];
+
+function folderSvg(color) {
+  return `<svg class="sidebar-cat-folder" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
+}
+
+function drillQuery(id) {
+  return id === "" ? "uncategorised=true" : `tag=${encodeURIComponent(id)}`;
+}
+
+function drillMeta(id) {
+  if (id === "") return { name: "Untagged", color: "var(--n-500)" };
+  const t = _sidebarTags.find(x => String(x.id) === String(id));
+  return t ? { name: t.name, color: t.color } : null;
+}
+
+function renderSidebar(slide) {
+  const ul = document.getElementById("sidebar-cats");
+  if (!ul) return;
+  const back = document.getElementById("sidebar-back");
+  const title = document.getElementById("sidebar-cat-title");
+  const newCat = document.getElementById("sidebar-new-cat");
+  const newContent = document.getElementById("sidebar-new-content");
+  const meta = _drillId === null ? null : drillMeta(_drillId);
+
+  const ct = _drillCt === null ? null : _contentTypes.find(c => String(c.id) === String(_drillCt));
+
+  if (!meta) {
+    _drillId = null;
+    _drillCt = null;
+    if (back) back.style.display = "none";
+    if (title) title.style.display = "none";
+    if (newCat) newCat.style.display = "";
+    if (newContent) newContent.style.display = "none";
+    renderCategoryList(ul);
+  } else if (ct) {
+    if (back) back.style.display = "";
+    if (title) {
+      title.style.display = "";
+      title.innerHTML = folderSvg(escHtml(meta.color)) +
+        `<span>${escHtml(meta.name)}</span>` +
+        `<span class="crumb-sep">›</span>` +
+        `<span>${escHtml(ct.title)}</span>`;
+    }
+    if (newCat) newCat.style.display = "none";
+    if (newContent) newContent.style.display = "none";
+    renderCtNotes(ul, ct);
+  } else {
+    if (back) back.style.display = "";
+    if (title) {
+      title.style.display = "";
+      title.innerHTML = folderSvg(escHtml(meta.color)) +
+        `<span>${escHtml(meta.name)}</span>`;
+    }
+    if (newCat) newCat.style.display = "none";
+    if (newContent) newContent.style.display = "";
+    renderContentTypes(ul, meta);
+  }
+  lucide.createIcons();
+
+  if (slide) {
+    ul.classList.remove("slide-from-right", "slide-from-left");
+    void ul.offsetWidth;                     // restart the animation
+    ul.classList.add(`slide-from-${slide}`);
+  }
+}
+
+function renderCategoryList(ul) {
+  const params = new URLSearchParams(location.search);
+  const activeTag = params.get("tag");
+  const activeUncat = params.get("uncategorised") === "true";
+
+  // navigating loads the category's overview; the sidebar lands drilled in
+  const row = (id, name, color, badge, menu) => `
+    <li>
+      <a href="/?${drillQuery(id)}&type=all"
+         class="sidebar-cat-link ${(id === "" ? activeUncat : activeTag === String(id)) ? "active" : ""}">
+        ${folderSvg(color)}
+        <span class="sidebar-cat-name">${name}</span>
+        ${badge}
+      </a>
+      ${menu ? `
+      <div class="row-menu-wrap">
+        <button class="row-overflow" type="button" title="More">
+          <i data-lucide="ellipsis-vertical"></i>
+        </button>
+        <div class="row-menu">${menu}</div>
+      </div>` : ""}
+    </li>`;
+
+  ul.innerHTML =
+    row("", "Untagged", "var(--n-500)",
+        _uncatUnread > 0 ? `<span class="sidebar-cat-badge">${_uncatUnread}</span>` : "", "") +
+    _sidebarTags.map(t => row(t.id, escHtml(t.name), escHtml(t.color), "", `
+      <button type="button" class="row-menu-item" data-action="rename" data-id="${t.id}">
+        <i data-lucide="square-pen"></i> Edit
+      </button>
+      <button type="button" class="row-menu-item danger" data-action="delete" data-id="${t.id}">
+        <i data-lucide="trash-2"></i> Delete
+      </button>`)).join("");
+
+  bindRowMenus(ul);
+}
+
+function renderContentTypes(ul, meta) {
+  const params = new URLSearchParams(location.search);
+  const activeCt = params.get("ct");
+  const qs = drillQuery(_drillId);
+
+  // "All" is the category overview; the rest are the user's own buckets
+  const rows = [`
+    <li>
+      <a href="/?${qs}&type=all" class="sidebar-cat-link ${activeCt ? "" : "active"}">
+        <i data-lucide="align-justify"></i>
+        <span class="sidebar-cat-name">All</span>
+      </a>
+    </li>`];
+
+  for (const ct of _contentTypes) {
+    rows.push(`
+    <li>
+      <a href="/?${qs}&ct=${ct.id}" class="sidebar-cat-link ${activeCt === String(ct.id) ? "active" : ""}">
+        <i data-lucide="${KIND_ICON[ct.kind] || "file"}"></i>
+        <span class="sidebar-cat-name">${escHtml(ct.title)}</span>
+        ${ct.count ? `<span class="sidebar-cat-badge">${ct.count}</span>` : ""}
+      </a>
+      <div class="row-menu-wrap">
+        <button class="row-overflow" type="button" title="More">
+          <i data-lucide="ellipsis-vertical"></i>
+        </button>
+        <div class="row-menu">
+          <button type="button" class="row-menu-item" data-ct-action="rename" data-id="${ct.id}">
+            <i data-lucide="square-pen"></i> Rename
+          </button>
+          <button type="button" class="row-menu-item danger" data-ct-action="delete" data-id="${ct.id}">
+            <i data-lucide="trash-2"></i> Delete
+          </button>
+        </div>
+      </div>
+    </li>`);
+  }
+
+  ul.innerHTML = rows.join("");
+
+  ul.querySelectorAll(".row-overflow").forEach(btn => {
+    btn.addEventListener("click", () => toggleRowMenu(btn));
+  });
+  ul.querySelectorAll("[data-ct-action]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      closeRowMenus();
+      const ct = _contentTypes.find(x => String(x.id) === btn.dataset.id);
+      if (!ct) return;
+      if (btn.dataset.ctAction === "rename") openContentTypeModal(ct);
+      else deleteContentType(ct);
+    });
+  });
+}
+
+function renderCtNotes(ul, ct) {
+  if (!_ctNotes.length) {
+    ul.innerHTML = `<li class="sidebar-empty">No notes in here yet.</li>`;
+    return;
+  }
+  ul.innerHTML = _ctNotes.map(n => `
+    <li>
+      <button type="button" class="sidebar-cat-link" data-note="${n.id}">
+        <i data-lucide="file-text"></i>
+        <span class="sidebar-cat-name">${escHtml(n.title || "Untitled")}</span>
+      </button>
+    </li>`).join("");
+  ul.querySelectorAll("[data-note]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      ul.querySelectorAll(".sidebar-cat-link").forEach(el => el.classList.remove("active"));
+      btn.classList.add("active");
+      window.openNoteById?.(btn.dataset.note);
+    });
+  });
+}
+
+async function loadCtNotes(ctId) {
+  if (ctId === null) { _ctNotes = []; return; }
+  try {
+    const res = await fetch(`/api/content-types/${ctId}/items`, { headers: headers() });
+    _ctNotes = res.ok ? (await res.json()).notes : [];
+  } catch { _ctNotes = []; }
+}
+window.reloadSidebarNotes = async () => {
+  if (_drillCt === null) return;
+  await loadCtNotes(_drillCt);
+  renderSidebar();
+};
+
+/* ── Content type create / rename / delete ───────────────── */
+function openContentTypeModal(ct) {
+  const modal = document.getElementById("content-type-modal");
+  if (!modal) return;
+  const tagId = _drillId === "" ? "" : _drillId;
+  document.getElementById("content-type-id").value = ct ? ct.id : "";
+  document.getElementById("content-type-tag").value = tagId;
+  document.getElementById("content-type-title").value = ct ? ct.title : "";
+  document.getElementById("content-type-kind").value = ct ? ct.kind : "links";
+  document.getElementById("content-type-kind-group").style.display = ct ? "none" : "";
+  document.getElementById("content-type-modal-title").textContent =
+    ct ? "Rename content type" : "New content type";
+  modal.showModal();
+  setTimeout(() => document.getElementById("content-type-title").focus(), 50);
+}
+
+async function submitContentType(ev) {
+  ev.preventDefault();
+  const id = document.getElementById("content-type-id").value;
+  const tagId = document.getElementById("content-type-tag").value;
+  const title = document.getElementById("content-type-title").value.trim();
+  const kind = document.getElementById("content-type-kind").value;
+  if (!title) return;
+
+  if (id) {
+    await fetch(`/api/content-types/${id}`, {
+      method: "PATCH", headers: headers(), body: JSON.stringify({ title }),
+    });
+  } else {
+    if (!tagId) { toast("Untagged can't hold content types"); return; }
+    const res = await fetch("/api/content-types", {
+      method: "POST", headers: headers(),
+      body: JSON.stringify({ tag_id: Number(tagId), kind, title }),
+    });
+    if (!res.ok) { toast("Could not create content type"); return; }
+  }
+  document.getElementById("content-type-modal").close();
+  await loadContentTypes(_drillId);
+  renderSidebar();
+  toast(id ? "Renamed" : "Content type created");
+}
+
+async function deleteContentType(ct) {
+  const ok = await showConfirm(
+    `Delete "${ct.title}"? The ${ct.kind === "folders" ? "items it groups" : "items inside"} are kept.`
+  );
+  if (!ok) return;
+  await fetch(`/api/content-types/${ct.id}`, { method: "DELETE", headers: headers() });
+  await loadContentTypes(_drillId);
+  renderSidebar();
+  toast("Content type deleted");
+  if (new URLSearchParams(location.search).get("ct") === String(ct.id)) {
+    location.search = drillQuery(_drillId) + "&type=all";
+  }
+}
+
+async function loadContentTypes(drillId) {
+  if (drillId === null || drillId === "") { _contentTypes = []; return; }
+  try {
+    const res = await fetch(`/api/content-types?tag=${encodeURIComponent(drillId)}`, { headers: headers() });
+    _contentTypes = res.ok ? await res.json() : [];
+  } catch { _contentTypes = []; }
+}
+
+function bindRowMenus(ul) {
+  ul.querySelectorAll(".row-overflow").forEach(btn => {
+    btn.addEventListener("click", () => toggleRowMenu(btn));
+  });
+  ul.querySelectorAll('[data-action="rename"]').forEach(btn => {
+    btn.addEventListener("click", () => {
+      closeRowMenus();
+      const t = _sidebarTags.find(x => x.id === Number(btn.dataset.id));
+      if (t) openEditTag(t.id, t.name, t.color);
+    });
+  });
+  ul.querySelectorAll('[data-action="delete"]').forEach(btn => {
+    btn.addEventListener("click", () => {
+      closeRowMenus();
+      const t = _sidebarTags.find(x => x.id === Number(btn.dataset.id));
+      if (t) openTagDeleteModal(t.id, t.name);
+    });
+  });
+}
+
+function initSidebarBack() {
+  const back = document.getElementById("sidebar-back");
+  if (back) {
+    back.addEventListener("click", () => {
+      if (_drillCt !== null) _drillCt = null;   // notes list -> content types
+      else _drillId = null;                      // content types -> categories
+      renderSidebar("left");
+    });
+  }
+  const newContent = document.getElementById("sidebar-new-content");
+  if (newContent) newContent.addEventListener("click", () => openContentTypeModal(null));
+}
+
 async function loadSidebarCats() {
   const ul = document.getElementById("sidebar-cats");
   if (!ul) return;
@@ -1118,75 +1420,138 @@ async function loadSidebarCats() {
       fetch("/api/links/uncategorised-count", { headers: headers() }),
     ]);
     if (!tagsRes.ok) return;
-    const tags = await tagsRes.json();
-    const { unread_count: uncatUnread } = uncatRes.ok ? await uncatRes.json() : { unread_count: 0 };
+    _sidebarTags = await tagsRes.json();
+    _uncatUnread = (uncatRes.ok ? await uncatRes.json() : {}).unread_count || 0;
 
+    // land already drilled in when the page is scoped to one category
     const params = new URLSearchParams(location.search);
-    const activeTag = params.get("tag");
-    const activeUncat = params.get("uncategorised") === "true";
+    if (params.get("uncategorised") === "true") _drillId = "";
+    else if (params.get("tag")) _drillId = params.get("tag");
 
-    const uncatItem = `
-      <li>
-        <a href="/?uncategorised=true"
-           class="sidebar-cat-link ${activeUncat ? "active" : ""}">
-          <span class="sidebar-cat-dot" style="background:var(--subtext);opacity:0.4"></span>
-          <span class="sidebar-cat-name">Untagged</span>
-          ${uncatUnread > 0 ? `<span class="sidebar-cat-badge">${uncatUnread}</span>` : ""}
-        </a>
-      </li>`;
+    await loadContentTypes(_drillId);
 
-    ul.innerHTML = uncatItem + tags.map(t => `
-      <li>
-        <a href="/?tag=${encodeURIComponent(t.id)}"
-           class="sidebar-cat-link ${activeTag === String(t.id) ? "active" : ""}">
-          <span class="sidebar-cat-dot" style="background:${escHtml(t.color)}"></span>
-          <span class="sidebar-cat-name">${escHtml(t.name)}</span>
-        </a>
-        <div class="row-menu-wrap">
-          <button class="row-overflow" type="button" title="More">
-            <i data-lucide="ellipsis"></i>
-          </button>
-          <div class="row-menu">
-            <button type="button" class="row-menu-item" data-action="rename" data-id="${t.id}">
-              <i data-lucide="square-pen"></i> Rename
-            </button>
-            <button type="button" class="row-menu-item" data-action="export" data-id="${t.id}">
-              <i data-lucide="download"></i> Export data
-            </button>
-            <button type="button" class="row-menu-item danger" data-action="delete" data-id="${t.id}">
-              <i data-lucide="trash-2"></i> Delete
-            </button>
-          </div>
-        </div>
-      </li>
-    `).join("");
-
-    ul.querySelectorAll(".row-overflow").forEach(btn => {
-      btn.addEventListener("click", () => toggleRowMenu(btn));
-    });
-    ul.querySelectorAll('[data-action="rename"]').forEach(btn => {
-      btn.addEventListener("click", () => {
-        closeRowMenus();
-        const t = tags.find(x => x.id === Number(btn.dataset.id));
-        if (t) openEditTag(t.id, t.name, t.color);
-      });
-    });
-    ul.querySelectorAll('[data-action="export"]').forEach(btn => {
-      btn.addEventListener("click", () => {
-        closeRowMenus();
-        doExport("all", btn.dataset.id);
-      });
-    });
-    ul.querySelectorAll('[data-action="delete"]').forEach(btn => {
-      btn.addEventListener("click", () => {
-        closeRowMenus();
-        const t = tags.find(x => x.id === Number(btn.dataset.id));
-        if (t) openTagDeleteModal(t.id, t.name);
-      });
-    });
-    lucide.createIcons();
+    const ctParam = params.get("ct");
+    const openCt = _contentTypes.find(c => String(c.id) === String(ctParam));
+    if (openCt && openCt.kind === "notes") {
+      _drillCt = openCt.id;
+      await loadCtNotes(_drillCt);
+    }
+    renderSidebar(_drillId === null ? undefined : "right");
   } catch {}
 }
+
+
+
+/* ── Content type view ───────────────────────────────────── */
+function pictureTile(pic) {
+  return `
+    <figure class="pic-tile" data-id="${pic.id}">
+      <img src="/api/pictures/${pic.id}/file" alt="${escHtml(pic.original_name || "")}" loading="lazy">
+      <button class="pic-delete" title="Delete picture" onclick="deletePicture('${pic.id}')">
+        <i data-lucide="trash-2"></i>
+      </button>
+    </figure>`;
+}
+
+function noteRow(note) {
+  return `
+    <div class="ov-row" onclick="window.openNoteById && window.openNoteById('${note.id}')">
+      <span class="ov-title">${escHtml(note.title || "Untitled")}</span>
+      <span class="ov-date">${friendlyDate(note.updated_at)}</span>
+    </div>`;
+}
+
+function ctSection(label, inner, empty) {
+  return `
+    <section class="ov-section">
+      <div class="ov-header"><span class="ov-label">${label}</span></div>
+      ${inner || `<div class="ov-empty">${empty}</div>`}
+    </section>`;
+}
+
+async function renderContentTypeView(ctId) {
+  const pane = document.getElementById("ct-pane");
+  if (!pane) return;
+  pane.innerHTML = '<div class="loading-state">Loading…</div>';
+  const res = await fetch(`/api/content-types/${ctId}/items`, { headers: headers() });
+  if (!res.ok) { pane.innerHTML = '<div class="empty-state">Not found.</div>'; return; }
+  const data = await res.json();
+  const ct = data.content_type;
+  const kind = ct.kind;
+
+  const head = `
+    <div class="ct-head">
+      <h1>${escHtml(ct.title)}</h1>
+      <span class="ct-kind">${KIND_LABEL[kind] || kind}</span>
+      ${kind === "pictures" || kind === "folders"
+        ? `<button class="btn-primary ct-upload" onclick="pickPictures(${ct.id})">
+             <i data-lucide="upload"></i> Add pictures
+           </button>` : ""}
+      ${kind === "links"
+        ? `<button class="btn-primary" onclick="addLinkToContentType(${ct.id})">
+             <i data-lucide="plus"></i> Add link
+           </button>` : ""}
+    </div>`;
+
+  const linksHtml = data.links.map(l => linkCardHtml(l)).join("");
+  const notesHtml = data.notes.map(noteRow).join("");
+  const picsHtml = data.pictures.length
+    ? `<div class="pic-grid">${data.pictures.map(pictureTile).join("")}</div>` : "";
+
+  let body;
+  if (kind === "links")   body = linksHtml || '<div class="empty-state">No links in here yet.</div>';
+  else if (kind === "notes")  body = notesHtml || '<div class="empty-state">No notes in here yet.</div>';
+  else if (kind === "pictures") body = picsHtml || '<div class="empty-state">No pictures yet.</div>';
+  else body = ctSection("Links", linksHtml, "No links.")
+            + ctSection("Notes", notesHtml, "No notes.")
+            + ctSection("Pictures", picsHtml, "No pictures.");
+
+  pane.innerHTML = head + body;
+  bindLinkRowMenus(pane);
+  lucide.createIcons();
+}
+
+function pickPictures(ctId) {
+  const input = document.getElementById("picture-input");
+  if (!input) return;
+  input.onchange = async () => {
+    const files = [...input.files];
+    input.value = "";
+    if (!files.length) return;
+    let ok = 0;
+    for (const file of files) {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("content_type_id", ctId);
+      const res = await fetch("/api/pictures", {
+        method: "POST", headers: { "X-Tether-UUID": UUID_HEADER() }, body: fd,
+      });
+      if (res.ok) ok++;
+    }
+    toast(ok ? `Added ${ok} picture${ok === 1 ? "" : "s"}` : "Upload failed");
+    renderContentTypeView(ctId);
+    loadContentTypes(_drillId).then(renderSidebar);
+  };
+  input.click();
+}
+
+async function deletePicture(id) {
+  const ok = await showConfirm("Delete this picture? This cannot be undone.");
+  if (!ok) return;
+  await fetch(`/api/pictures/${id}`, { method: "DELETE", headers: headers() });
+  const ctId = new URLSearchParams(location.search).get("ct");
+  if (ctId) renderContentTypeView(ctId);
+  loadContentTypes(_drillId).then(renderSidebar);
+}
+
+function addLinkToContentType(ctId) {
+  const t = _sidebarTags.find(x => String(x.id) === String(_drillId));
+  _pendingContentType = ctId;
+  openAddLink(t ? { name: t.name, color: t.color } : undefined);
+}
+
+window.renderContentTypeView = renderContentTypeView;
+
 
 function setPageTitle(title) {
   document.title = `${title} — Tether`;
@@ -1217,9 +1582,9 @@ function initNotesToolbarToggle() {
 /* ── Init ────────────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
   lucide.createIcons();
-  setView(currentView);
   loadSidebarCats();
   initSidebarResize();
+  initSidebarBack();
 
   const addUrl = new URLSearchParams(location.search).get("add");
   if (addUrl) {

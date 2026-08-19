@@ -6,3 +6,5 @@ __pycache__/
 notes/
 
 .claude/
+pictures/
+*.db.bak-*

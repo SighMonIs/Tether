@@ -5,33 +5,13 @@
 <div class="feed">
   <div class="feed-card notes-card">
     <div class="notes-editor-pane" id="notes-editor-pane">
-        <div class="content-toolbar notes-toolbar" id="notes-toolbar">
+        <div class="content-toolbar notes-toolbar" id="notes-toolbar" style="display:none">
+          <div class="view-toggle">
+            <button class="toggle-btn" id="note-back-btn" title="Back to notes"><i data-lucide="arrow-left"></i></button>
+          </div>
           <div class="view-toggle">
             <button class="toggle-btn" data-cmd="undo" title="Undo"><i data-lucide="undo-2"></i></button>
             <button class="toggle-btn" data-cmd="redo" title="Redo"><i data-lucide="redo-2"></i></button>
-          </div>
-          <div class="view-toggle">
-            <button class="toggle-btn" data-cmd="bold" title="Bold"><i data-lucide="bold"></i></button>
-            <button class="toggle-btn" data-cmd="italic" title="Italic"><i data-lucide="italic"></i></button>
-            <button class="toggle-btn" data-cmd="underline" title="Underline"><i data-lucide="underline"></i></button>
-            <button class="toggle-btn" data-cmd="strike" title="Strikethrough"><i data-lucide="strikethrough"></i></button>
-            <button class="toggle-btn" data-cmd="code" title="Inline code"><i data-lucide="code"></i></button>
-          </div>
-          <div class="view-toggle">
-            <button class="toggle-btn" data-cmd="heading1" title="Heading 1"><i data-lucide="heading-1"></i></button>
-            <button class="toggle-btn" data-cmd="heading2" title="Heading 2"><i data-lucide="heading-2"></i></button>
-            <button class="toggle-btn" data-cmd="heading3" title="Heading 3"><i data-lucide="heading-3"></i></button>
-          </div>
-          <div class="view-toggle">
-            <button class="toggle-btn" data-cmd="bulletList" title="Bullet list"><i data-lucide="list"></i></button>
-            <button class="toggle-btn" data-cmd="orderedList" title="Numbered list"><i data-lucide="list-ordered"></i></button>
-            <button class="toggle-btn" data-cmd="taskList" title="Task list"><i data-lucide="list-checks"></i></button>
-          </div>
-          <div class="view-toggle">
-            <button class="toggle-btn" data-cmd="blockquote" title="Quote"><i data-lucide="quote"></i></button>
-            <button class="toggle-btn" data-cmd="codeBlock" title="Code block"><i data-lucide="square-code"></i></button>
-            <button class="toggle-btn" data-cmd="horizontalRule" title="Divider"><i data-lucide="minus"></i></button>
-            <button class="toggle-btn" data-cmd="link" title="Link"><i data-lucide="link"></i></button>
           </div>
           <div class="view-toggle">
             <button class="toggle-btn" id="note-category-btn" title="Change category"><i data-lucide="settings"></i></button>
@@ -39,113 +19,111 @@
           <span class="notes-save-status" id="notes-save-status"></span>
         </div>
 
-        <div class="notes-editor-scroll" id="note-editor-view">
+        <!-- shown when the caret sits inside a link -->
+        <div class="link-toolbar" id="link-toolbar">
+          <span class="link-bar-url" id="link-bar-url"></span>
+          <span class="bubble-sep"></span>
+          <button class="toggle-btn" id="link-bar-edit" title="Edit link"><i data-lucide="square-pen"></i></button>
+          <button class="toggle-btn" id="link-bar-open" title="Open in new tab"><i data-lucide="external-link"></i></button>
+          <button class="toggle-btn" id="link-bar-remove" title="Remove link"><i data-lucide="unlink"></i></button>
+        </div>
+
+        <!-- appears over the selection; see initBubbleToolbar in notes.js -->
+        <div class="bubble-toolbar" id="bubble-toolbar">
+          <button class="toggle-btn" data-cmd="bold" title="Bold"><i data-lucide="bold"></i></button>
+          <button class="toggle-btn" data-cmd="italic" title="Italic"><i data-lucide="italic"></i></button>
+          <button class="toggle-btn" data-cmd="underline" title="Underline"><i data-lucide="underline"></i></button>
+          <button class="toggle-btn" data-cmd="strike" title="Strikethrough"><i data-lucide="strikethrough"></i></button>
+          <button class="toggle-btn" data-cmd="code" title="Inline code"><i data-lucide="code"></i></button>
+          <span class="bubble-sep"></span>
+          <button class="toggle-btn" data-cmd="link" title="Link"><i data-lucide="link"></i></button>
+        </div>
+
+        <div class="feed-scroll" id="overview-view">
+          <div class="overview-pane">
+            <section class="ov-section">
+              <div class="ov-header">
+                <span class="ov-label">Links</span>
+                <button type="button" class="ov-viewall" data-goto="links">View all</button>
+              </div>
+              <div id="ov-links"></div>
+            </section>
+            <section class="ov-section">
+              <div class="ov-header">
+                <span class="ov-label">Notes</span>
+                <button type="button" class="ov-viewall" data-goto="notes">View all</button>
+              </div>
+              <div id="ov-notes"></div>
+            </section>
+          </div>
+        </div>
+
+        <div class="feed-scroll" id="notes-list-view" style="display:none">
+          <div class="notes-list-pane">
+            <button type="button" class="notes-new-btn" id="notes-new-btn">
+              <i data-lucide="plus"></i> New note
+            </button>
+            <div class="notes-list" id="notes-list"></div>
+          </div>
+        </div>
+
+        <div class="notes-editor-scroll" id="note-editor-view" style="display:none">
           <input type="text" id="note-title-input" class="note-title-input" placeholder="Untitled" autocomplete="off">
           <div id="note-editor" class="note-editor"></div>
         </div>
 
-        <div class="content-toolbar" id="links-toolbar" style="display:none">
-          <div class="filter-bar">
-            <button class="filter-chip active" data-tag="">All</button>
-            <button class="filter-chip" data-unread="true">Unread</button>
-            <button class="filter-chip" data-read="true">Read</button>
-          </div>
-          <div class="search-box">
-            <i data-lucide="search"></i>
-            <input type="text" id="search-input" placeholder="Search links…" autocomplete="off">
-          </div>
-          <div class="view-toggle">
-            <button class="toggle-btn" title="Mark all as read" onclick="confirmMarkAll(true)">
-              <i data-lucide="check-check"></i>
-            </button>
-            <button class="toggle-btn" title="Mark all as unread" onclick="confirmMarkAll(false)">
-              <i data-lucide="eye-off"></i>
-            </button>
-          </div>
-          <div class="view-toggle">
-            <button class="toggle-btn active" id="btn-cards" title="Card view" onclick="setView('cards')">
-              <i data-lucide="layout-list"></i>
-            </button>
-            <button class="toggle-btn" id="btn-table" title="Compact view" onclick="setView('table')">
-              <i data-lucide="list"></i>
-            </button>
-          </div>
+        <div class="feed-scroll" id="ct-view" style="display:none">
+          <div class="ct-pane" id="ct-pane"></div>
         </div>
+
         <div class="feed-scroll" id="links-view" style="display:none">
           <div id="links-container" class="cards-view">
             <div class="loading-state">Loading…</div>
           </div>
 
-          <table id="links-table" class="links-table hidden">
-            <colgroup>
-              <col style="width:36px">
-              <col>
-              <col style="width:180px">
-              <col style="width:85px">
-              <col style="width:160px">
-            </colgroup>
-            <thead>
-              <tr>
-                <th></th>
-                <th>Title / URL</th>
-                <th>Tags</th>
-                <th>Saved</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
         </div>
       </div>
   </div>
 </div><!-- /.feed -->
 
 <script>
-  if (localStorage.getItem("activeTab") === "links") {
-    document.getElementById("notes-toolbar").style.display = "none";
-    document.getElementById("note-editor-view").style.display = "none";
-    document.getElementById("links-toolbar").style.display = "";
-    document.getElementById("links-view").style.display = "";
-    document.getElementById("tab-links-btn").classList.add("active");
+  // avoid a flash of the overview before notes.js (a module) runs
+  const _type = new URLSearchParams(location.search).get("type");
+  if (_type === "links" || _type === "notes") {
+    document.getElementById("overview-view").style.display = "none";
+    document.getElementById(_type === "links" ? "links-view" : "notes-list-view").style.display = "";
   }
 </script>
 
-<template id="card-template">
-  <article class="link-card" data-id="">
-    <div class="card-header">
-      <img class="favicon" src="" alt="" onerror="this.style.display='none'">
-      <a class="card-title" href="" target="_blank" rel="noopener"></a>
-      <button class="icon-btn read-btn" title="Mark as read">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-      </button>
-      <button class="icon-btn delete-btn" title="Delete">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/></svg>
-      </button>
-    </div>
-    <p class="card-desc"></p>
-    <div class="card-footer">
-      <span class="card-url"></span>
-      <div class="card-tags"></div>
-    </div>
-  </article>
-</template>
+<dialog id="content-type-modal" class="modal">
+  <div class="modal-content">
+    <h2 id="content-type-modal-title">New content type</h2>
+    <form id="content-type-form" onsubmit="submitContentType(event)">
+      <input type="hidden" id="content-type-id">
+      <input type="hidden" id="content-type-tag">
+      <div class="form-group">
+        <label for="content-type-title">Title</label>
+        <input type="text" id="content-type-title" placeholder="e.g. Vegan" required autocomplete="off">
+      </div>
+      <div class="form-group" id="content-type-kind-group">
+        <label for="content-type-kind">Type</label>
+        <select id="content-type-kind" class="edit-tag-select">
+          <option value="links">Links</option>
+          <option value="notes">Notes</option>
+          <option value="pictures">Pictures</option>
+          <option value="folders">Folder</option>
+        </select>
+        <p class="form-note">A folder collects links, notes and pictures from this category together.</p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" onclick="document.getElementById('content-type-modal').close()">Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</dialog>
 
-<template id="row-template">
-  <tr data-id="">
-    <td class="row-favicon"><img class="favicon" src="" alt="" onerror="this.style.display='none'"></td>
-    <td class="row-title"><a href="" target="_blank" rel="noopener"></a></td>
-    <td class="row-tags"></td>
-    <td class="row-date"></td>
-    <td class="row-actions">
-      <button class="icon-btn read-btn" title="Mark as read">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-      </button>
-      <button class="icon-btn delete-btn" title="Delete">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/></svg>
-      </button>
-    </td>
-  </tr>
-</template>
+<input type="file" id="picture-input" accept="image/*" multiple style="display:none">
 
 <dialog id="edit-modal" class="modal">
   <div class="modal-content">
@@ -203,5 +181,5 @@
 </dialog>
 {% endblock %}
 {% block scripts %}
-<script type="module" src="/static/notes.js?v=033"></script>
+<script type="module" src="/static/notes.js?v=061"></script>
 {% endblock %}

@@ -1,22 +1,19 @@
-import { Extension, textblockTypeInputRule, wrappingInputRule, nodeInputRule } from "https://esm.sh/@tiptap/core@2.27.2";
+import { Extension, InputRule } from "https://esm.sh/@tiptap/core@2.27.2";
 import Suggestion from "https://esm.sh/@tiptap/suggestion@2.27.2?deps=@tiptap/core@2.27.2";
 
+// Inline formatting (bold, italic, link, …) lives in the selection bubble instead —
+// a slash command can't act on a selection, so these only belong in one place.
 const ITEMS = [
-  { id: "heading1", command: "/heading1", keywords: ["h1", "heading1", "title"], icon: "heading-1", rule: { kind: "textblock", type: "heading", attrs: { level: 1 } } },
-  { id: "heading2", command: "/heading2", keywords: ["h2", "heading2", "subtitle"], icon: "heading-2", rule: { kind: "textblock", type: "heading", attrs: { level: 2 } } },
-  { id: "heading3", command: "/heading3", keywords: ["h3", "heading3"], icon: "heading-3", rule: { kind: "textblock", type: "heading", attrs: { level: 3 } } },
-  { id: "bulletList", command: "/bulletlist", keywords: ["bullet", "ul", "list", "unordered"], icon: "list", rule: { kind: "wrapping", type: "bulletList" } },
-  { id: "orderedList", command: "/numberedlist", keywords: ["ordered", "ol", "number", "numbered"], icon: "list-ordered", rule: { kind: "wrapping", type: "orderedList" } },
-  { id: "taskList", command: "/tasklist", keywords: ["task", "todo", "checklist", "checkbox"], icon: "list-checks", rule: { kind: "wrapping", type: "taskList" } },
-  { id: "blockquote", command: "/quote", keywords: ["quote", "blockquote"], icon: "quote", rule: { kind: "wrapping", type: "blockquote" } },
-  { id: "codeBlock", command: "/code", keywords: ["code", "codeblock", "pre"], icon: "square-code", rule: { kind: "textblock", type: "codeBlock" } },
-  { id: "horizontalRule", command: "/divider", keywords: ["divider", "hr", "rule", "line"], icon: "minus", rule: { kind: "node", type: "horizontalRule" } },
-  { id: "bold", command: "/bold", keywords: ["bold", "b", "strong"], icon: "bold" },
-  { id: "italic", command: "/italic", keywords: ["italic", "i", "em"], icon: "italic" },
-  { id: "underline", command: "/underline", keywords: ["underline", "u"], icon: "underline" },
-  { id: "strike", command: "/strikethrough", keywords: ["strike", "strikethrough", "s"], icon: "strikethrough" },
-  { id: "code", command: "/inlinecode", keywords: ["code", "inline", "inlinecode"], icon: "code" },
-  { id: "link", command: "/link", keywords: ["link", "url", "hyperlink"], icon: "link" },
+  { id: "paragraph", command: "/text", keywords: ["text", "paragraph", "normal", "plain", "body", "reset"], icon: "type" },
+  { id: "heading1", command: "/heading1", keywords: ["h1", "heading1", "title"], icon: "heading-1" },
+  { id: "heading2", command: "/heading2", keywords: ["h2", "heading2", "subtitle"], icon: "heading-2" },
+  { id: "heading3", command: "/heading3", keywords: ["h3", "heading3"], icon: "heading-3" },
+  { id: "bulletList", command: "/bulletlist", keywords: ["bullet", "ul", "list", "unordered"], icon: "list" },
+  { id: "orderedList", command: "/numberedlist", keywords: ["ordered", "ol", "number", "numbered"], icon: "list-ordered" },
+  { id: "taskList", command: "/tasklist", keywords: ["task", "todo", "checklist", "checkbox"], icon: "list-checks" },
+  { id: "blockquote", command: "/quote", keywords: ["quote", "blockquote"], icon: "quote" },
+  { id: "codeBlock", command: "/code", keywords: ["code", "codeblock", "pre"], icon: "square-code" },
+  { id: "horizontalRule", command: "/divider", keywords: ["divider", "hr", "rule", "line"], icon: "minus" },
 ];
 
 class SlashMenu {
@@ -77,21 +74,20 @@ class SlashMenu {
   destroy() { this.el.remove(); }
 }
 
+// Typing "/name " runs exactly the same function the menu item runs, so both paths
+// behave identically. The trigger text is removed first; the command is deferred to a
+// microtask so it applies on the state that already has the trigger deleted.
 function buildInputRules(commandsMap, editor) {
-  return ITEMS.filter(item => item.rule).map(item => {
-    const nodeType = editor.schema.nodes[item.rule.type];
-    if (!nodeType) return null;
-    const find = new RegExp(`^${item.command}\\s$`, "i");
-    if (item.rule.kind === "textblock") {
-      return textblockTypeInputRule({ find, type: nodeType, getAttributes: () => item.rule.attrs });
-    }
-    if (item.rule.kind === "wrapping") {
-      return wrappingInputRule({ find, type: nodeType });
-    }
-    if (item.rule.kind === "node") {
-      return nodeInputRule({ find, type: nodeType });
-    }
-    return null;
+  return ITEMS.map(item => {
+    const run = commandsMap[item.id];
+    if (!run) return null;
+    return new InputRule({
+      find: new RegExp(`${item.command} $`, "i"),
+      handler: ({ state, range }) => {
+        state.tr.delete(range.from, range.to);
+        queueMicrotask(() => run(editor));
+      },
+    });
   }).filter(Boolean);
 }
 
