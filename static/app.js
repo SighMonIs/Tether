@@ -1114,12 +1114,8 @@ let _sidebarTags = [];
 let _uncatUnread = 0;
 let _drillId = null;   // null = list, "" = Untagged, otherwise a tag id (string)
 
-const KIND_ICON = {
-  links: "link", notes: "file-text", pictures: "image", folders: "folder",
-};
-const KIND_LABEL = {
-  links: "Links", notes: "Notes", pictures: "Pictures", folders: "Folder",
-};
+const KIND_ICON = { links: "link", notes: "file-text" };
+const KIND_LABEL = { links: "Links", notes: "Notes" };
 let _contentTypes = [];   // for the category currently drilled into
 let _drillCt = null;      // third level: a notes content type, listing its notes
 let _ctNotes = [];
@@ -1358,7 +1354,7 @@ async function submitContentType(ev) {
 
 async function deleteContentType(ct) {
   const ok = await showConfirm(
-    `Delete "${ct.title}"? The ${ct.kind === "folders" ? "items it groups" : "items inside"} are kept.`
+    `Delete "${ct.title}"? The items inside are kept.`
   );
   if (!ok) return;
   await fetch(`/api/content-types/${ct.id}`, { method: "DELETE", headers: headers() });
@@ -1443,30 +1439,12 @@ async function loadSidebarCats() {
 
 
 /* ── Content type view ───────────────────────────────────── */
-function pictureTile(pic) {
-  return `
-    <figure class="pic-tile" data-id="${pic.id}">
-      <img src="/api/pictures/${pic.id}/file" alt="${escHtml(pic.original_name || "")}" loading="lazy">
-      <button class="pic-delete" title="Delete picture" onclick="deletePicture('${pic.id}')">
-        <i data-lucide="trash-2"></i>
-      </button>
-    </figure>`;
-}
-
 function noteRow(note) {
   return `
     <div class="ov-row" onclick="window.openNoteById && window.openNoteById('${note.id}')">
       <span class="ov-title">${escHtml(note.title || "Untitled")}</span>
       <span class="ov-date">${friendlyDate(note.updated_at)}</span>
     </div>`;
-}
-
-function ctSection(label, inner, empty) {
-  return `
-    <section class="ov-section">
-      <div class="ov-header"><span class="ov-label">${label}</span></div>
-      ${inner || `<div class="ov-empty">${empty}</div>`}
-    </section>`;
 }
 
 async function renderContentTypeView(ctId) {
@@ -1483,65 +1461,21 @@ async function renderContentTypeView(ctId) {
     <div class="ct-head">
       <h1>${escHtml(ct.title)}</h1>
       <span class="ct-kind">${KIND_LABEL[kind] || kind}</span>
-      ${kind === "pictures" || kind === "folders"
-        ? `<button class="btn-primary ct-upload" onclick="pickPictures(${ct.id})">
-             <i data-lucide="upload"></i> Add pictures
-           </button>` : ""}
       ${kind === "links"
         ? `<button class="btn-primary" onclick="addLinkToContentType(${ct.id})">
              <i data-lucide="plus"></i> Add link
            </button>` : ""}
     </div>`;
 
-  const linksHtml = data.links.map(l => linkCardHtml(l)).join("");
-  const notesHtml = data.notes.map(noteRow).join("");
-  const picsHtml = data.pictures.length
-    ? `<div class="pic-grid">${data.pictures.map(pictureTile).join("")}</div>` : "";
-
-  let body;
-  if (kind === "links")   body = linksHtml || '<div class="empty-state">No links in here yet.</div>';
-  else if (kind === "notes")  body = notesHtml || '<div class="empty-state">No notes in here yet.</div>';
-  else if (kind === "pictures") body = picsHtml || '<div class="empty-state">No pictures yet.</div>';
-  else body = ctSection("Links", linksHtml, "No links.")
-            + ctSection("Notes", notesHtml, "No notes.")
-            + ctSection("Pictures", picsHtml, "No pictures.");
+  const body = kind === "links"
+    ? (data.links.map(l => linkCardHtml(l)).join("")
+       || '<div class="empty-state">No links in here yet.</div>')
+    : (data.notes.map(noteRow).join("")
+       || '<div class="empty-state">No notes in here yet.</div>');
 
   pane.innerHTML = head + body;
   bindLinkRowMenus(pane);
   lucide.createIcons();
-}
-
-function pickPictures(ctId) {
-  const input = document.getElementById("picture-input");
-  if (!input) return;
-  input.onchange = async () => {
-    const files = [...input.files];
-    input.value = "";
-    if (!files.length) return;
-    let ok = 0;
-    for (const file of files) {
-      const fd = new FormData();
-      fd.append("file", file);
-      fd.append("content_type_id", ctId);
-      const res = await fetch("/api/pictures", {
-        method: "POST", headers: { "X-Tether-UUID": UUID_HEADER() }, body: fd,
-      });
-      if (res.ok) ok++;
-    }
-    toast(ok ? `Added ${ok} picture${ok === 1 ? "" : "s"}` : "Upload failed");
-    renderContentTypeView(ctId);
-    loadContentTypes(_drillId).then(renderSidebar);
-  };
-  input.click();
-}
-
-async function deletePicture(id) {
-  const ok = await showConfirm("Delete this picture? This cannot be undone.");
-  if (!ok) return;
-  await fetch(`/api/pictures/${id}`, { method: "DELETE", headers: headers() });
-  const ctId = new URLSearchParams(location.search).get("ct");
-  if (ctId) renderContentTypeView(ctId);
-  loadContentTypes(_drillId).then(renderSidebar);
 }
 
 function addLinkToContentType(ctId) {

@@ -9,12 +9,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 import httpx
 from bs4 import BeautifulSoup
-from fastapi import APIRouter, Header, HTTPException, BackgroundTasks, Request, UploadFile, File, Form
-from fastapi.responses import JSONResponse, Response, FileResponse
+from fastapi import APIRouter, Header, HTTPException, BackgroundTasks, Request, UploadFile, File
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, field_validator
 from typing import Any
 
-from db import db, get_setting, set_setting, NOTES_DIR, PICTURES_DIR, CONTENT_KINDS
+from db import db, get_setting, set_setting, NOTES_DIR, CONTENT_KINDS
 
 router = APIRouter(prefix="/api")
 
@@ -407,7 +407,7 @@ def _link_tag_write(conn, link_id: str, tag_id: int):
 
 
 def _clear_link_tags(conn, link_id: str):
-    """Drop membership of every links-kind content type, leaving folders intact."""
+    """Drop membership of every links-kind content type."""
     conn.execute(
         "DELETE FROM link_content_types WHERE link_id=? AND content_type_id IN "
         "(SELECT id FROM content_types WHERE kind='links')",
@@ -803,18 +803,8 @@ class ContentTypeUpdate(BaseModel):
 
 def _content_type_dict(conn, row) -> dict:
     d = dict(row)
-    if d["kind"] == "links":
-        table, col = "link_content_types", "link_id"
-    elif d["kind"] == "notes":
-        table, col = "note_content_types", "note_id"
-    elif d["kind"] == "pictures":
-        table, col = "picture_content_types", "picture_id"
-    else:  # a folder counts everything pointed at it
-        d["count"] = sum(
-            conn.execute(f"SELECT COUNT(*) c FROM {t} WHERE content_type_id=?", (d["id"],)).fetchone()["c"]
-            for t in ("link_content_types", "note_content_types", "picture_content_types")
-        )
-        return d
+    table, col = (("link_content_types", "link_id") if d["kind"] == "links"
+                  else ("note_content_types", "note_id"))
     d["count"] = conn.execute(
         f"SELECT COUNT(*) c FROM {table} WHERE content_type_id=?", (d["id"],)
     ).fetchone()["c"]
@@ -879,20 +869,18 @@ def delete_content_type(ct_id: int, x_tether_uuid: str | None = Header(default=N
 
 
 class MembershipBody(BaseModel):
-    item_kind: str          # link | note | picture
+    item_kind: str          # link | note
     item_id: str
 
 
 _MEMBER_TABLES = {
     "link": ("link_content_types", "link_id"),
     "note": ("note_content_types", "note_id"),
-    "picture": ("picture_content_types", "picture_id"),
 }
 
 
 @router.post("/content-types/{ct_id}/items", status_code=204)
 def add_item_to_content_type(ct_id: int, body: MembershipBody, x_tether_uuid: str | None = Header(default=None)):
-    """Also how items are put into a folder — a folder is just a content type."""
     _check_auth(x_tether_uuid)
     if body.item_kind not in _MEMBER_TABLES:
         raise HTTPException(status_code=400, detail="unknown item_kind")
@@ -918,101 +906,28 @@ def remove_item_from_content_type(ct_id: int, item_kind: str, item_id: str,
 
 @router.get("/content-types/{ct_id}/items")
 def list_content_type_items(ct_id: int, x_tether_uuid: str | None = Header(default=None)):
-    """Everything in this bucket. For a folder that means all three kinds at once."""
+    """Everything in this bucket."""
     _check_auth(x_tether_uuid)
     with db() as conn:
         row = conn.execute("SELECT * FROM content_types WHERE id=?", (ct_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404)
         kind = row["kind"]
-        out: dict = {"content_type": dict(row), "links": [], "notes": [], "pictures": []}
+        out: dict = {"content_type": dict(row), "links": [], "notes": []}
 
-        if kind in ("links", "folders"):
+        if kind == "links":
             rows = conn.execute(
                 "SELECT l.* FROM links l JOIN link_content_types lct ON lct.link_id=l.id "
                 "WHERE lct.content_type_id=? ORDER BY l.created_at DESC", (ct_id,)
             ).fetchall()
             out["links"] = _link_rows(conn, rows)
-        if kind in ("notes", "folders"):
+        else:
             rows = conn.execute(
                 f"{_NOTE_SELECT} JOIN note_content_types nct ON nct.note_id=n.id "
                 "WHERE nct.content_type_id=? ORDER BY n.updated_at DESC", (ct_id,)
             ).fetchall()
             out["notes"] = [_note_dict(r) for r in rows]
-        if kind in ("pictures", "folders"):
-            rows = conn.execute(
-                "SELECT p.* FROM pictures p JOIN picture_content_types pct ON pct.picture_id=p.id "
-                "WHERE pct.content_type_id=? ORDER BY p.created_at DESC", (ct_id,)
-            ).fetchall()
-            out["pictures"] = [dict(r) for r in rows]
         return out
-
-
-# ── Pictures ─────────────────────────────────────────────────
-_ALLOWED_IMAGE = {
-    "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
-    "image/webp": ".webp", "image/avif": ".avif",
-}
-MAX_PICTURE_BYTES = 25 * 1024 * 1024
-
-
-@router.post("/pictures", status_code=201)
-async def upload_picture(
-    file: UploadFile = File(...),
-    content_type_id: int | None = Form(default=None),
-    x_tether_uuid: str | None = Header(default=None),
-):
-    _check_auth(x_tether_uuid)
-    ext = _ALLOWED_IMAGE.get((file.content_type or "").lower())
-    if not ext:
-        raise HTTPException(status_code=400, detail="unsupported image type")
-    data = await file.read()
-    if not data:
-        raise HTTPException(status_code=400, detail="empty file")
-    if len(data) > MAX_PICTURE_BYTES:
-        raise HTTPException(status_code=413, detail="image too large")
-
-    pic_id = str(uuid.uuid4())
-    filename = f"{pic_id}{ext}"
-    PICTURES_DIR.mkdir(parents=True, exist_ok=True)
-    (PICTURES_DIR / filename).write_bytes(data)
-
-    with db() as conn:
-        conn.execute(
-            "INSERT INTO pictures(id, filename, original_name, mime, size) VALUES (?,?,?,?,?)",
-            (pic_id, filename, file.filename, file.content_type, len(data)),
-        )
-        if content_type_id is not None:
-            conn.execute(
-                "INSERT OR IGNORE INTO picture_content_types(picture_id, content_type_id) VALUES (?,?)",
-                (pic_id, content_type_id),
-            )
-        row = conn.execute("SELECT * FROM pictures WHERE id=?", (pic_id,)).fetchone()
-        return dict(row)
-
-
-@router.get("/pictures/{picture_id}/file")
-def get_picture_file(picture_id: str, x_tether_uuid: str | None = Header(default=None)):
-    with db() as conn:
-        row = conn.execute("SELECT * FROM pictures WHERE id=?", (picture_id,)).fetchone()
-    if not row:
-        raise HTTPException(status_code=404)
-    path = PICTURES_DIR / row["filename"]
-    if not path.exists():
-        raise HTTPException(status_code=404)
-    return FileResponse(path, media_type=row["mime"] or "application/octet-stream")
-
-
-@router.delete("/pictures/{picture_id}", status_code=204)
-def delete_picture(picture_id: str, x_tether_uuid: str | None = Header(default=None)):
-    _check_auth(x_tether_uuid)
-    with db() as conn:
-        row = conn.execute("SELECT filename FROM pictures WHERE id=?", (picture_id,)).fetchone()
-        conn.execute("DELETE FROM pictures WHERE id=?", (picture_id,))
-    if row:
-        path = PICTURES_DIR / row["filename"]
-        if path.exists():
-            path.unlink()
 
 
 @router.post("/settings/uuid", status_code=200)

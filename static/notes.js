@@ -477,7 +477,7 @@ async function renderCategoryOverview() {
   }
   const blocks = await Promise.all(types.map(async ct => {
     const r = await fetch(`/api/content-types/${ct.id}/items`, { headers: authHeaders(false) });
-    const d = r.ok ? await r.json() : { links: [], notes: [], pictures: [] };
+    const d = r.ok ? await r.json() : { links: [], notes: [] };
     const rows = [
       ...d.links.map(l => ({ html: window.linkCardHtml(l), at: l.created_at })),
       ...d.notes.map(n => ({
@@ -486,9 +486,7 @@ async function renderCategoryOverview() {
                  <span class="ov-date">${window.friendlyDate(n.updated_at)}</span>
                </div>`, at: n.updated_at })),
     ].sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 5);
-    const pics = d.pictures.slice(0, 5).map(pic =>
-      `<img class="ov-thumb" src="/api/pictures/${pic.id}/file" alt="" loading="lazy">`).join("");
-    const body = (rows.map(r => r.html).join("") + (pics ? `<div class="ov-thumbs">${pics}</div>` : ""))
+    const body = rows.map(r => r.html).join("")
       || `<div class="ov-empty">Nothing in here yet.</div>`;
     return `
       <section class="ov-section">

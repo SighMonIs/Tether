@@ -7,12 +7,9 @@ from contextlib import contextmanager
 _data_dir = Path(os.environ.get("TETHER_DATA", Path(__file__).parent))
 DB_PATH = _data_dir / "tether.db"
 NOTES_DIR = _data_dir / "notes"
-PICTURES_DIR = _data_dir / "pictures"
 
 # A content type is a user-named bucket inside a category, e.g. Cooking > "Vegan".
-# A folder is just a content type of kind 'folders' — because an item may belong to
-# many content types, folder membership reuses the same join tables.
-CONTENT_KINDS = ("links", "notes", "pictures", "folders")
+CONTENT_KINDS = ("links", "notes")
 
 
 def get_conn():
@@ -106,15 +103,6 @@ def init_db():
             );
             CREATE INDEX IF NOT EXISTS content_types_tag ON content_types(tag_id);
 
-            CREATE TABLE IF NOT EXISTS pictures (
-                id            TEXT PRIMARY KEY,
-                filename      TEXT NOT NULL,
-                original_name TEXT,
-                mime          TEXT,
-                size          INTEGER,
-                created_at    TEXT NOT NULL DEFAULT (datetime('now'))
-            );
-
             CREATE TABLE IF NOT EXISTS link_content_types (
                 link_id         TEXT    NOT NULL REFERENCES links(id) ON DELETE CASCADE,
                 content_type_id INTEGER NOT NULL REFERENCES content_types(id) ON DELETE CASCADE,
@@ -124,11 +112,6 @@ def init_db():
                 note_id         TEXT    NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
                 content_type_id INTEGER NOT NULL REFERENCES content_types(id) ON DELETE CASCADE,
                 PRIMARY KEY (note_id, content_type_id)
-            );
-            CREATE TABLE IF NOT EXISTS picture_content_types (
-                picture_id      TEXT    NOT NULL REFERENCES pictures(id) ON DELETE CASCADE,
-                content_type_id INTEGER NOT NULL REFERENCES content_types(id) ON DELETE CASCADE,
-                PRIMARY KEY (picture_id, content_type_id)
             );
         """)
 
@@ -147,8 +130,8 @@ def init_db():
             )
 
         NOTES_DIR.mkdir(parents=True, exist_ok=True)
-        PICTURES_DIR.mkdir(parents=True, exist_ok=True)
         _migrate_to_content_types(conn)
+        _drop_unused_kinds(conn)
 
         # Generate UUID on first run
         existing = conn.execute("SELECT value FROM settings WHERE key='uuid'").fetchone()
@@ -199,6 +182,22 @@ def _migrate_to_content_types(conn):
     # truth and expose the same shape as a view — every read query still works.
     conn.execute("DROP TABLE link_tags")
     _ensure_link_tags_view(conn)
+
+
+def _drop_unused_kinds(conn):
+    """Pictures and folders were dropped from the app. Clear the leftovers, but
+    only while they hold nothing, so no data can go with them."""
+    tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    for t in ("picture_content_types", "pictures"):
+        if t in tables and conn.execute(f"SELECT COUNT(*) c FROM {t}").fetchone()["c"] == 0:
+            conn.execute(f"DROP TABLE {t}")
+    empty_folders = conn.execute("""
+        SELECT id FROM content_types WHERE kind NOT IN ('links', 'notes')
+        AND id NOT IN (SELECT content_type_id FROM link_content_types)
+        AND id NOT IN (SELECT content_type_id FROM note_content_types)
+    """).fetchall()
+    for row in empty_folders:
+        conn.execute("DELETE FROM content_types WHERE id=?", (row["id"],))
 
 
 def _ensure_link_tags_view(conn):

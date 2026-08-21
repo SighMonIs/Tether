@@ -110,10 +110,7 @@
         <select id="content-type-kind" class="edit-tag-select">
           <option value="links">Links</option>
           <option value="notes">Notes</option>
-          <option value="pictures">Pictures</option>
-          <option value="folders">Folder</option>
         </select>
-        <p class="form-note">A folder collects links, notes and pictures from this category together.</p>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn-ghost" onclick="document.getElementById('content-type-modal').close()">Cancel</button>
@@ -122,8 +119,6 @@
     </form>
   </div>
 </dialog>
-
-<input type="file" id="picture-input" accept="image/*" multiple style="display:none">
 
 <dialog id="edit-modal" class="modal">
   <div class="modal-content">
@@ -181,5 +176,5 @@
 </dialog>
 {% endblock %}
 {% block scripts %}
-<script type="module" src="/static/notes.js?v=061"></script>
+<script type="module" src="/static/notes.js?v=062"></script>
 {% endblock %}
