@@ -402,6 +402,21 @@ def _link_tag_write(conn, link_id: str, tag_id: int):
     )
 
 
+def _file_note(conn, note_id: str, tag_id: int | None):
+    """Put a note in its category's notes content type, so the sidebar lists it.
+    Without this a note exists but belongs to no bucket and stays invisible."""
+    conn.execute(
+        "DELETE FROM note_content_types WHERE note_id=? AND content_type_id IN "
+        "(SELECT id FROM content_types WHERE kind='notes')",
+        (note_id,),
+    )
+    if tag_id:
+        conn.execute(
+            "INSERT OR IGNORE INTO note_content_types(note_id, content_type_id) VALUES (?,?)",
+            (note_id, _default_content_type(conn, tag_id, "notes")),
+        )
+
+
 def _clear_link_tags(conn, link_id: str):
     """Drop membership of every links-kind content type."""
     conn.execute(
@@ -666,6 +681,7 @@ def create_note(body: NoteCreate, x_tether_uuid: str | None = Header(default=Non
             "INSERT INTO notes(id, title, tag_id, link_id, position) VALUES (?,?,?,?,?)",
             (note_id, title, body.tag_id, body.link_id, position),
         )
+        _file_note(conn, note_id, body.tag_id)
         row = conn.execute(f"{_NOTE_SELECT} WHERE n.id=?", (note_id,)).fetchone()
     return _note_dict(row)
 
@@ -721,6 +737,7 @@ def update_note(note_id: str, body: NoteUpdate, x_tether_uuid: str | None = Head
                 "UPDATE notes SET tag_id=?, updated_at=datetime('now') WHERE id=?",
                 (body.tag_id or None, note_id),
             )
+            _file_note(conn, note_id, body.tag_id or None)
         if body.content is not None:
             path.write_text(body.content, encoding="utf-8")
             conn.execute("UPDATE notes SET updated_at=datetime('now') WHERE id=?", (note_id,))

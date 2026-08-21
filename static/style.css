@@ -993,6 +993,24 @@ a.ov-viewall { text-decoration: underline; }
   flex: none;
 }
 .link-date { font-size: 11.5px; color: var(--subtext); white-space: nowrap; }
+
+/* stays visible even unhovered — it tells you the link has a note */
+.link-note-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  flex: none;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--n-400);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.link-note-btn i { width: 15px; height: 15px; }
+.link-note-btn:hover { background: var(--n-700); color: var(--n-100); }
 .link-row .card-tags { flex: none; justify-content: flex-end; }
 
 /* actions stay hidden until the row is hovered, per the handoff's row spec */

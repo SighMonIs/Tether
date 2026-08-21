@@ -580,6 +580,7 @@ async function createNote() {
   notesCache.unshift(note);
   currentNoteId = null;
   await openNote(note.id);
+  window.reloadSidebarNotes?.();
   titleInput.focus();
 }
 
@@ -601,6 +602,7 @@ window.createNoteFromLink = async function(title, url, linkId) {
   notesCache.unshift(note);
   currentNoteId = null;
   await openNote(note.id);
+  window.reloadSidebarNotes?.();
   if (linkId) window.loadLinks?.();
 };
 

@@ -178,6 +178,10 @@ function linkCardHtml(link) {
         <a class="link-title" href="${escHtml(link.url)}" target="_blank" rel="noopener">${escHtml(link.title || domain)}</a>
         <span class="link-url">${domain}</span>
       </span>
+      ${link.note_id ? `
+      <button class="link-note-btn" title="Open note" data-note-for="${link.id}" data-note-id="${link.note_id}">
+        <i data-lucide="file-text"></i>
+      </button>` : ""}
       <span class="link-meta">
         <span class="card-tags">${tagPills(link.tags)}</span>
         <span class="link-date">${friendlyDate(link.created_at)}</span>
@@ -207,6 +211,12 @@ window.bindLinkRowMenus = bindLinkRowMenus;
 function bindLinkRowMenus(root) {
   root.querySelectorAll(".link-row .row-overflow").forEach(btn => {
     btn.addEventListener("click", () => toggleRowMenu(btn));
+  });
+  root.querySelectorAll("[data-note-for]").forEach(btn => {
+    btn.addEventListener("click", ev => {
+      ev.preventDefault();
+      openNoteForLink(btn.dataset.noteFor, btn.dataset.noteId);
+    });
   });
   root.querySelectorAll(".link-row .row-menu-item").forEach(btn => {
     btn.addEventListener("click", () => closeRowMenus());
@@ -1195,8 +1205,9 @@ function renderContentTypes(ul, meta) {
         for (const n of notes) {
           rows.push(`
             <li>
-              <button type="button" class="sidebar-cat-link ct-note" data-note="${n.id}">
-                <i data-lucide="file-text"></i>
+              <button type="button" class="sidebar-cat-link ct-note" data-note="${n.id}"
+                      title="${n.link_id ? "Note on a saved link" : ""}">
+                <i data-lucide="${n.link_id ? "link" : "file-text"}"></i>
                 <span class="sidebar-cat-name">${escHtml(n.title || "Untitled")}</span>
               </button>
             </li>`);

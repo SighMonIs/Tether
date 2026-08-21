@@ -131,6 +131,7 @@ def init_db():
         _migrate_to_content_types(conn)
         _drop_unused_kinds(conn)
         _drop_read_columns(conn)
+        _file_orphan_notes(conn)
 
         # Generate UUID on first run
         existing = conn.execute("SELECT value FROM settings WHERE key='uuid'").fetchone()
@@ -181,6 +182,33 @@ def _migrate_to_content_types(conn):
     # truth and expose the same shape as a view — every read query still works.
     conn.execute("DROP TABLE link_tags")
     _ensure_link_tags_view(conn)
+
+
+def _file_orphan_notes(conn):
+    """Notes created before content types existed (or by the add-note-from-link
+    flow) belong to no bucket, so nothing lists them. File them under their
+    category's notes content type."""
+    orphans = conn.execute("""
+        SELECT id, tag_id FROM notes
+        WHERE tag_id IS NOT NULL
+          AND id NOT IN (SELECT note_id FROM note_content_types)
+    """).fetchall()
+    for note in orphans:
+        row = conn.execute(
+            "SELECT id FROM content_types WHERE tag_id=? AND kind='notes' ORDER BY position, id LIMIT 1",
+            (note["tag_id"],),
+        ).fetchone()
+        if row:
+            ct_id = row["id"]
+        else:
+            ct_id = conn.execute(
+                "INSERT INTO content_types(tag_id, kind, title, position) VALUES (?,?,?,0)",
+                (note["tag_id"], "notes", "Notes"),
+            ).lastrowid
+        conn.execute(
+            "INSERT OR IGNORE INTO note_content_types(note_id, content_type_id) VALUES (?,?)",
+            (note["id"], ct_id),
+        )
 
 
 def _drop_read_columns(conn):
