@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=112">
+  <link rel="stylesheet" href="/static/style.css?v=114">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <meta name="tether-uuid" content="{{ tether_uuid | default('') }}">
 </head>
@@ -44,7 +44,7 @@
       <i data-lucide="arrow-left"></i>
       <span>Back</span>
     </button>
-    <div class="sidebar-cat-title" id="sidebar-cat-title" style="display:none"></div>
+    <a class="sidebar-cat-title" id="sidebar-cat-title" href="/" style="display:none"></a>
     <ul class="sidebar-cats" id="sidebar-cats"></ul>
     <button type="button" class="sidebar-new-cat" id="sidebar-new-cat" onclick="openNewTagModal()">
       <i data-lucide="plus"></i> New category
@@ -227,7 +227,7 @@
     </button>
   </div>
 
-  <script src="/static/app.js?v=079"></script>
+  <script src="/static/app.js?v=083"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

@@ -213,17 +213,13 @@ def list_tags(
     _check_auth(x_tether_uuid)
     with db() as conn:
         rows = conn.execute("""
-            SELECT t.id, t.name, t.color,
-                   COUNT(CASE WHEN l.id IS NOT NULL AND l.read_at IS NULL THEN 1 END) AS unread_count
+            SELECT t.id, t.name, t.color
             FROM tags t
-            LEFT JOIN link_tags lt ON lt.tag_id = t.id
-            LEFT JOIN links l ON l.id = lt.link_id
-            GROUP BY t.id
             ORDER BY t.name
         """).fetchall()
     result = [dict(r) for r in rows]
     if shortcut:
-        result.append({"id": "__new__", "name": NEW_TAG_SENTINEL, "color": "#888899", "unread_count": 0})
+        result.append({"id": "__new__", "name": NEW_TAG_SENTINEL, "color": "#888899"})
     return result
 
 
@@ -435,18 +431,16 @@ def _link_rows(conn, rows):
 def uncategorised_count(x_tether_uuid: str | None = Header(default=None)):
     _check_auth(x_tether_uuid)
     with db() as conn:
-        unread = conn.execute(
-            "SELECT COUNT(*) FROM links WHERE read_at IS NULL AND NOT EXISTS "
+        count = conn.execute(
+            "SELECT COUNT(*) FROM links WHERE NOT EXISTS "
             "(SELECT 1 FROM link_tags lt WHERE lt.link_id = links.id)"
         ).fetchone()[0]
-    return {"unread_count": unread}
+    return {"count": count}
 
 
 @router.get("/links")
 def list_links(
     tag: int | None = None,
-    unread: bool | None = None,
-    read: bool | None = None,
     uncategorised: bool | None = None,
     x_tether_uuid: str | None = Header(default=None),
 ):
@@ -458,10 +452,6 @@ def list_links(
             params.append(tag)
         if uncategorised:
             clauses.append("NOT EXISTS (SELECT 1 FROM link_tags lt WHERE lt.link_id=l.id)")
-        if unread:
-            clauses.append("l.is_read=0")
-        elif read:
-            clauses.append("l.is_read=1")
         where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
         rows = conn.execute(
             f"SELECT l.* FROM links l {where} ORDER BY l.created_at DESC",
@@ -520,7 +510,6 @@ def cleanup_links(value: int, unit: str, x_tether_uuid: str | None = Header(defa
 
 
 class LinkUpdate(BaseModel):
-    is_read: bool | None = None
     tags: list[str] | None = None
     title: str | None = None
     url: str | None = None
@@ -548,17 +537,6 @@ def update_link(
             conn.execute("UPDATE links SET title=? WHERE id=?", (body.title.strip(), link_id))
         if body.url is not None:
             conn.execute("UPDATE links SET url=? WHERE id=?", (body.url.strip(), link_id))
-        if body.is_read is not None:
-            if body.is_read:
-                conn.execute(
-                    "UPDATE links SET is_read=1, read_at=datetime('now') WHERE id=?",
-                    (link_id,)
-                )
-            else:
-                conn.execute(
-                    "UPDATE links SET is_read=0, read_at=NULL WHERE id=?",
-                    (link_id,)
-                )
         if body.tags is not None:
             _clear_link_tags(conn, link_id)
             for tag_name in body.tags:
@@ -580,29 +558,6 @@ def update_link(
         result = dict(row)
         result["tags"] = [dict(t) for t in tags]
         return result
-
-
-class MarkAllBody(BaseModel):
-    is_read: bool
-    tag: int | None = None
-    uncategorised: bool | None = None
-
-
-@router.post("/links/mark-all", status_code=204)
-def mark_all_links(body: MarkAllBody, x_tether_uuid: str | None = Header(default=None)):
-    _check_auth(x_tether_uuid)
-    with db() as conn:
-        clauses, params = [], []
-        if body.tag is not None:
-            clauses.append("id IN (SELECT link_id FROM link_tags WHERE tag_id=?)")
-            params.append(body.tag)
-        if body.uncategorised:
-            clauses.append("NOT EXISTS (SELECT 1 FROM link_tags lt WHERE lt.link_id=links.id)")
-        where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-        if body.is_read:
-            conn.execute(f"UPDATE links SET is_read=1, read_at=datetime('now') {where}", params)
-        else:
-            conn.execute(f"UPDATE links SET is_read=0, read_at=NULL {where}", params)
 
 
 @router.post("/links/{link_id}/refresh", status_code=204)
@@ -942,7 +897,7 @@ def regenerate_uuid(body: SettingValue, x_tether_uuid: str | None = Header(defau
 def _links_export_payload(conn, tag: int | None = None) -> dict:
     if tag is not None:
         links = [dict(r) for r in conn.execute(
-            "SELECT l.id, l.url, l.title, l.description, l.favicon_url, l.is_read, l.created_at, l.read_at "
+            "SELECT l.id, l.url, l.title, l.description, l.favicon_url, l.created_at "
             "FROM links l JOIN link_tags lt ON lt.link_id=l.id WHERE lt.tag_id=? ORDER BY l.created_at",
             (tag,)
         ).fetchall()]
@@ -952,7 +907,7 @@ def _links_export_payload(conn, tag: int | None = None) -> dict:
         ).fetchall()]
     else:
         links = [dict(r) for r in conn.execute(
-            "SELECT id, url, title, description, favicon_url, is_read, created_at, read_at FROM links ORDER BY created_at"
+            "SELECT id, url, title, description, favicon_url, created_at FROM links ORDER BY created_at"
         ).fetchall()]
         tags = [dict(r) for r in conn.execute("SELECT id, name, color FROM tags").fetchall()]
         link_tags = [dict(r) for r in conn.execute("SELECT link_id, tag_id FROM link_tags").fetchall()]
@@ -1046,10 +1001,9 @@ async def import_data(
                 exists = conn.execute("SELECT 1 FROM links WHERE id=?", (link["id"],)).fetchone()
                 if not exists:
                     conn.execute(
-                        "INSERT INTO links(id, url, title, description, favicon_url, is_read, created_at, read_at) VALUES(?,?,?,?,?,?,?,?)",
+                        "INSERT INTO links(id, url, title, description, favicon_url, created_at) VALUES(?,?,?,?,?,?)",
                         (link["id"], link["url"], link.get("title"), link.get("description"),
-                         link.get("favicon_url"), link.get("is_read", 0),
-                         link.get("created_at"), link.get("read_at")),
+                         link.get("favicon_url"), link.get("created_at")),
                     )
                     imported += 1
                 else:

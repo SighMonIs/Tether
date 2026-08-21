@@ -80,8 +80,6 @@ function initSidebarResize() {
 
 /* global state */
 let currentTag = null;
-let currentUnread = null;
-let currentRead = null;
 let currentUncat = null;
 let searchTimeout = null;
 
@@ -105,7 +103,7 @@ function toast(msg, duration = 2200) {
 }
 
 /* ── Fetch links ─────────────────────────────────────────── */
-async function fetchLinks(tag, unread, read, uncat, query) {
+async function fetchLinks(tag, uncat, query) {
   let url;
   if (query) {
     url = `/api/links/search?q=${encodeURIComponent(query)}`;
@@ -113,8 +111,6 @@ async function fetchLinks(tag, unread, read, uncat, query) {
     url = "/api/links";
     const params = new URLSearchParams();
     if (tag) params.set("tag", tag);
-    if (unread) params.set("unread", "true");
-    if (read) params.set("read", "true");
     if (uncat) params.set("uncategorised", "true");
     if (params.size) url += "?" + params.toString();
   }
@@ -127,7 +123,7 @@ let _cachedLinks = [];
 
 async function loadLinks() {
   const query = document.getElementById("search-input")?.value.trim();
-  _cachedLinks = await fetchLinks(currentTag, currentUnread, currentRead, currentUncat, query);
+  _cachedLinks = await fetchLinks(currentTag, currentUncat, query);
   renderCurrentLinks();
 }
 
@@ -139,9 +135,8 @@ async function updateCounts() {
   const counts = document.getElementById("link-counts");
   if (!counts) return;
   try {
-    const all = await fetchLinks(currentTag, null, null, currentUncat, null);
-    const unread = all.filter(l => !l.is_read).length;
-    counts.textContent = `${unread} unread · ${all.length} total`;
+    const all = await fetchLinks(currentTag, currentUncat, null);
+    counts.textContent = `${all.length} total`;
   } catch {}
 }
 
@@ -175,7 +170,7 @@ function getDomain(url) {
 function linkCardHtml(link) {
   const domain = escHtml(getDomain(link.url));
   return `
-    <article class="link-row ${link.is_read ? "is-read" : ""}" data-id="${link.id}">
+    <article class="link-row" data-id="${link.id}">
       <span class="link-thumb">
         ${link.favicon_url ? `<img src="${escHtml(link.favicon_url)}" alt="" onerror="this.style.display='none'">` : ""}
       </span>
@@ -192,9 +187,6 @@ function linkCardHtml(link) {
           <i data-lucide="ellipsis-vertical"></i>
         </button>
         <div class="row-menu">
-          <button type="button" class="row-menu-item" onclick="toggleRead('${link.id}', ${!link.is_read})">
-            <i data-lucide="${link.is_read ? "eye" : "check"}"></i> Mark as ${link.is_read ? "unread" : "read"}
-          </button>
           <button type="button" class="row-menu-item" onclick="openNoteForLink('${link.id}', ${link.note_id ? `'${link.note_id}'` : "null"})">
             <i data-lucide="file-text"></i> ${link.note_id ? "Open note" : "Add note"}
           </button>
@@ -265,56 +257,11 @@ document.addEventListener("scroll", () => closeRowMenus(), true);
 window.addEventListener("resize", () => closeRowMenus());
 
 /* ── Actions ─────────────────────────────────────────────── */
-async function toggleRead(id, isRead) {
-  await fetch(`/api/links/${id}`, {
-    method: "PATCH",
-    headers: headers(),
-    body: JSON.stringify({ is_read: isRead }),
-  });
-  await loadLinks();
-  loadSidebarCats();
-  updateCounts();
-  toast(isRead ? "Marked as read" : "Marked as unread");
-}
-
-async function confirmMarkAll(isRead) {
-  const label = isRead ? "Mark all as read" : "Mark all as unread";
-  const msg = isRead
-    ? "Mark all visible links as read?"
-    : "Mark all visible links as unread?";
-  if (!await showConfirm(msg, label)) return;
-  const body = {};
-  if (currentTag) body.tag = parseInt(currentTag);
-  if (currentUncat) body.uncategorised = true;
-  body.is_read = isRead;
-  await fetch("/api/links/mark-all", {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify(body),
-  });
-  await Promise.all([loadLinks(), loadSidebarCats(), updateCounts()]);
-  toast(isRead ? "Marked all as read" : "Marked all as unread");
-}
-
 async function deleteLink(id) {
   if (!await showConfirm("Delete this link? This can't be undone.")) return;
   await fetch(`/api/links/${id}`, { method: "DELETE", headers: headers() });
   await Promise.all([loadLinks(), loadSidebarCats(), updateCounts()]);
   toast("Link deleted");
-}
-
-/* ── Filter chips ────────────────────────────────────────── */
-function initFilters() {
-  document.querySelectorAll(".filter-chip").forEach(chip => {
-    chip.addEventListener("click", () => {
-      document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
-      chip.classList.add("active");
-      currentUnread = chip.dataset.unread ? true : null;
-      currentRead = chip.dataset.read ? true : null;
-      loadLinks();
-      updateCounts();
-    });
-  });
 }
 
 /* ── Search ──────────────────────────────────────────────── */
@@ -1111,14 +1058,13 @@ async function saveLink(e) {
 // Two states: the category list, and one category drilled down to its content
 // types. The drill is derived from the URL so a reload keeps you where you were.
 let _sidebarTags = [];
-let _uncatUnread = 0;
+let _uncatCount = 0;
 let _drillId = null;   // null = list, "" = Untagged, otherwise a tag id (string)
 
 const KIND_ICON = { links: "link", notes: "file-text" };
 const KIND_LABEL = { links: "Links", notes: "Notes" };
 let _contentTypes = [];   // for the category currently drilled into
-let _drillCt = null;      // third level: a notes content type, listing its notes
-let _ctNotes = [];
+let _ctNotes = {};        // notes keyed by their notes-kind content type id
 
 function folderSvg(color) {
   return `<svg class="sidebar-cat-folder" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
@@ -1143,32 +1089,21 @@ function renderSidebar(slide) {
   const newContent = document.getElementById("sidebar-new-content");
   const meta = _drillId === null ? null : drillMeta(_drillId);
 
-  const ct = _drillCt === null ? null : _contentTypes.find(c => String(c.id) === String(_drillCt));
-
   if (!meta) {
     _drillId = null;
-    _drillCt = null;
     if (back) back.style.display = "none";
     if (title) title.style.display = "none";
     if (newCat) newCat.style.display = "";
     if (newContent) newContent.style.display = "none";
     renderCategoryList(ul);
-  } else if (ct) {
-    if (back) back.style.display = "";
-    if (title) {
-      title.style.display = "";
-      title.innerHTML = folderSvg(escHtml(meta.color)) +
-        `<span>${escHtml(meta.name)}</span>` +
-        `<span class="crumb-sep">›</span>` +
-        `<span>${escHtml(ct.title)}</span>`;
-    }
-    if (newCat) newCat.style.display = "none";
-    if (newContent) newContent.style.display = "none";
-    renderCtNotes(ul, ct);
   } else {
     if (back) back.style.display = "";
     if (title) {
+      // the category itself is the default view — what "All" used to be
+      const onOverview = !new URLSearchParams(location.search).get("ct");
       title.style.display = "";
+      title.href = `/?${drillQuery(_drillId)}&type=all`;
+      title.classList.toggle("active", onOverview);
       title.innerHTML = folderSvg(escHtml(meta.color)) +
         `<span>${escHtml(meta.name)}</span>`;
     }
@@ -1210,7 +1145,7 @@ function renderCategoryList(ul) {
 
   ul.innerHTML =
     row("", "Untagged", "var(--n-500)",
-        _uncatUnread > 0 ? `<span class="sidebar-cat-badge">${_uncatUnread}</span>` : "", "") +
+        _uncatCount > 0 ? `<span class="sidebar-cat-badge">${_uncatCount}</span>` : "", "") +
     _sidebarTags.map(t => row(t.id, escHtml(t.name), escHtml(t.color), "", `
       <button type="button" class="row-menu-item" data-action="rename" data-id="${t.id}">
         <i data-lucide="square-pen"></i> Edit
@@ -1222,42 +1157,63 @@ function renderCategoryList(ul) {
   bindRowMenus(ul);
 }
 
+function ctRowMenu(ct) {
+  return `
+    <div class="row-menu-wrap">
+      <button class="row-overflow" type="button" title="More">
+        <i data-lucide="ellipsis-vertical"></i>
+      </button>
+      <div class="row-menu">
+        <button type="button" class="row-menu-item" data-ct-action="rename" data-id="${ct.id}">
+          <i data-lucide="square-pen"></i> Rename
+        </button>
+        <button type="button" class="row-menu-item danger" data-ct-action="delete" data-id="${ct.id}">
+          <i data-lucide="trash-2"></i> Delete
+        </button>
+      </div>
+    </div>`;
+}
+
 function renderContentTypes(ul, meta) {
   const params = new URLSearchParams(location.search);
   const activeCt = params.get("ct");
   const qs = drillQuery(_drillId);
-
-  // "All" is the category overview; the rest are the user's own buckets
-  const rows = [`
-    <li>
-      <a href="/?${qs}&type=all" class="sidebar-cat-link ${activeCt ? "" : "active"}">
-        <i data-lucide="align-justify"></i>
-        <span class="sidebar-cat-name">All</span>
-      </a>
-    </li>`];
+  const rows = [];
 
   for (const ct of _contentTypes) {
-    rows.push(`
-    <li>
-      <a href="/?${qs}&ct=${ct.id}" class="sidebar-cat-link ${activeCt === String(ct.id) ? "active" : ""}">
-        <i data-lucide="${KIND_ICON[ct.kind] || "file"}"></i>
-        <span class="sidebar-cat-name">${escHtml(ct.title)}</span>
-        ${ct.count ? `<span class="sidebar-cat-badge">${ct.count}</span>` : ""}
-      </a>
-      <div class="row-menu-wrap">
-        <button class="row-overflow" type="button" title="More">
-          <i data-lucide="ellipsis-vertical"></i>
-        </button>
-        <div class="row-menu">
-          <button type="button" class="row-menu-item" data-ct-action="rename" data-id="${ct.id}">
-            <i data-lucide="square-pen"></i> Rename
-          </button>
-          <button type="button" class="row-menu-item danger" data-ct-action="delete" data-id="${ct.id}">
-            <i data-lucide="trash-2"></i> Delete
-          </button>
-        </div>
-      </div>
-    </li>`);
+    if (ct.kind === "notes") {
+      // a heading rather than a link: its notes are listed right below it
+      rows.push(`
+        <li class="ct-heading">
+          <span class="ct-heading-label">${escHtml(ct.title)}</span>
+          ${ctRowMenu(ct)}
+        </li>`);
+      const notes = _ctNotes[ct.id] || [];
+      if (!notes.length) {
+        rows.push(`<li class="sidebar-empty">No notes yet.</li>`);
+      } else {
+        for (const n of notes) {
+          rows.push(`
+            <li>
+              <button type="button" class="sidebar-cat-link ct-note" data-note="${n.id}">
+                <i data-lucide="file-text"></i>
+                <span class="sidebar-cat-name">${escHtml(n.title || "Untitled")}</span>
+              </button>
+            </li>`);
+        }
+      }
+    } else {
+      rows.push(`
+        <li>
+          <a href="/?${qs}&ct=${ct.id}" data-ct="${ct.id}"
+             class="sidebar-cat-link ${activeCt === String(ct.id) ? "active" : ""}">
+            <i data-lucide="${KIND_ICON[ct.kind] || "file"}"></i>
+            <span class="sidebar-cat-name">${escHtml(ct.title)}</span>
+            ${ct.count ? `<span class="sidebar-cat-badge">${ct.count}</span>` : ""}
+          </a>
+          ${ctRowMenu(ct)}
+        </li>`);
+    }
   }
 
   ul.innerHTML = rows.join("");
@@ -1274,39 +1230,69 @@ function renderContentTypes(ul, meta) {
       else deleteContentType(ct);
     });
   });
-}
-
-function renderCtNotes(ul, ct) {
-  if (!_ctNotes.length) {
-    ul.innerHTML = `<li class="sidebar-empty">No notes in here yet.</li>`;
-    return;
-  }
-  ul.innerHTML = _ctNotes.map(n => `
-    <li>
-      <button type="button" class="sidebar-cat-link" data-note="${n.id}">
-        <i data-lucide="file-text"></i>
-        <span class="sidebar-cat-name">${escHtml(n.title || "Untitled")}</span>
-      </button>
-    </li>`).join("");
   ul.querySelectorAll("[data-note]").forEach(btn => {
     btn.addEventListener("click", () => {
-      ul.querySelectorAll(".sidebar-cat-link").forEach(el => el.classList.remove("active"));
+      markSidebarActive(null);
       btn.classList.add("active");
       window.openNoteById?.(btn.dataset.note);
     });
   });
+  ul.querySelectorAll("[data-ct]").forEach(a => {
+    a.addEventListener("click", ev => {
+      ev.preventDefault();
+      goContentType(a.dataset.ct);
+    });
+  });
 }
 
-async function loadCtNotes(ctId) {
-  if (ctId === null) { _ctNotes = []; return; }
-  try {
-    const res = await fetch(`/api/content-types/${ctId}/items`, { headers: headers() });
-    _ctNotes = res.ok ? (await res.json()).notes : [];
-  } catch { _ctNotes = []; }
+/* ── In-place view switching ─────────────────────────────── */
+// ctId null means the category overview
+function markSidebarActive(ctId) {
+  document.querySelectorAll("#sidebar-cats .sidebar-cat-link")
+    .forEach(el => el.classList.toggle("active", ctId != null && el.dataset.ct === String(ctId)));
+  document.getElementById("sidebar-cat-title")?.classList.toggle("active", ctId === "overview");
+}
+
+function goContentType(ctId) {
+  history.pushState({}, "", `/?${drillQuery(_drillId)}&ct=${ctId}`);
+  markSidebarActive(ctId);
+  window.showContentTypeView?.(ctId);
+}
+
+function goCategoryOverview() {
+  history.pushState({}, "", `/?${drillQuery(_drillId)}&type=all`);
+  markSidebarActive("overview");
+  window.showCategoryOverview?.();
+}
+
+// keep browser back/forward working for those pushes
+window.addEventListener("popstate", () => {
+  const params = new URLSearchParams(location.search);
+  const tag = params.get("uncategorised") === "true" ? "" : params.get("tag");
+  // a different category needs its own data, so let the page load handle it
+  if (String(tag) !== String(_drillId)) { location.reload(); return; }
+  const ctId = params.get("ct");
+  if (ctId) {
+    markSidebarActive(ctId);
+    window.showContentTypeView?.(ctId);
+  } else {
+    markSidebarActive("overview");
+    window.showCategoryOverview?.();
+  }
+});
+
+async function loadCtNotes() {
+  _ctNotes = {};
+  await Promise.all(_contentTypes.filter(ct => ct.kind === "notes").map(async ct => {
+    try {
+      const res = await fetch(`/api/content-types/${ct.id}/items`, { headers: headers() });
+      _ctNotes[ct.id] = res.ok ? (await res.json()).notes : [];
+    } catch { _ctNotes[ct.id] = []; }
+  }));
 }
 window.reloadSidebarNotes = async () => {
-  if (_drillCt === null) return;
-  await loadCtNotes(_drillCt);
+  if (_drillId === null) return;
+  await loadCtNotes();
   renderSidebar();
 };
 
@@ -1348,6 +1334,7 @@ async function submitContentType(ev) {
   }
   document.getElementById("content-type-modal").close();
   await loadContentTypes(_drillId);
+  await loadCtNotes();
   renderSidebar();
   toast(id ? "Renamed" : "Content type created");
 }
@@ -1359,6 +1346,7 @@ async function deleteContentType(ct) {
   if (!ok) return;
   await fetch(`/api/content-types/${ct.id}`, { method: "DELETE", headers: headers() });
   await loadContentTypes(_drillId);
+  await loadCtNotes();
   renderSidebar();
   toast("Content type deleted");
   if (new URLSearchParams(location.search).get("ct") === String(ct.id)) {
@@ -1398,13 +1386,20 @@ function initSidebarBack() {
   const back = document.getElementById("sidebar-back");
   if (back) {
     back.addEventListener("click", () => {
-      if (_drillCt !== null) _drillCt = null;   // notes list -> content types
-      else _drillId = null;                      // content types -> categories
+      _drillId = null;
       renderSidebar("left");
     });
   }
   const newContent = document.getElementById("sidebar-new-content");
   if (newContent) newContent.addEventListener("click", () => openContentTypeModal(null));
+
+  const title = document.getElementById("sidebar-cat-title");
+  if (title) {
+    title.addEventListener("click", ev => {
+      ev.preventDefault();
+      goCategoryOverview();
+    });
+  }
 }
 
 async function loadSidebarCats() {
@@ -1417,7 +1412,7 @@ async function loadSidebarCats() {
     ]);
     if (!tagsRes.ok) return;
     _sidebarTags = await tagsRes.json();
-    _uncatUnread = (uncatRes.ok ? await uncatRes.json() : {}).unread_count || 0;
+    _uncatCount = (uncatRes.ok ? await uncatRes.json() : {}).count || 0;
 
     // land already drilled in when the page is scoped to one category
     const params = new URLSearchParams(location.search);
@@ -1425,13 +1420,7 @@ async function loadSidebarCats() {
     else if (params.get("tag")) _drillId = params.get("tag");
 
     await loadContentTypes(_drillId);
-
-    const ctParam = params.get("ct");
-    const openCt = _contentTypes.find(c => String(c.id) === String(ctParam));
-    if (openCt && openCt.kind === "notes") {
-      _drillCt = openCt.id;
-      await loadCtNotes(_drillCt);
-    }
+    await loadCtNotes();
     renderSidebar(_drillId === null ? undefined : "right");
   } catch {}
 }
@@ -1550,7 +1539,6 @@ document.addEventListener("DOMContentLoaded", () => {
       document.querySelector(".filter-chip[data-tag='']")?.classList.add("active");
       setPageTitle("Untagged");
     }
-    initFilters();
     initSearch();
     loadLinks();
     updateCounts();

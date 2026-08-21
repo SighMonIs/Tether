@@ -34,13 +34,11 @@ async def home(request: Request):
     with db() as conn:
         tags = conn.execute("SELECT id, name, color FROM tags ORDER BY name").fetchall()
         total = conn.execute("SELECT COUNT(*) FROM links").fetchone()[0]
-        unread = conn.execute("SELECT COUNT(*) FROM links WHERE is_read=0").fetchone()[0]
     return templates.TemplateResponse("home.html", {
         "request": request,
         "tether_uuid": api_uuid,
         "tags": [dict(t) for t in tags],
         "total": total,
-        "unread": unread,
     })
 
 

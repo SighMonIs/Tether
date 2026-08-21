@@ -44,7 +44,8 @@ const linksView = document.getElementById("links-view");
 
 const toolbarHidden = localStorage.getItem("notesToolbarHidden") === "1";
 
-let currentView = "all";  // "all" | "links" | "notes" | "editor"
+let currentView = "all";  // "all" | "links" | "notes" | "ct" | "editor"
+let currentCtId = new URLSearchParams(location.search).get("ct");
 
 let noteQuery = "";
 const searchInput = document.getElementById("search-input");
@@ -70,12 +71,16 @@ function setView(v, persist = true) {
   if (!editing) { hideBubble(); hideLinkBar(); }
   if (v === "notes" || editing) renderList();
   if (v === "all") renderOverview();
-  if (v === "ct") window.renderContentTypeView?.(urlParams.get("ct"));
+  if (v === "ct") window.renderContentTypeView?.(currentCtId);
 }
 
 backBtn.addEventListener("click", () => { saveCurrentNote(); setView("notes"); });
 // app.js still calls this after a quick-add save
 window.setShowingLinks = on => setView(on ? "links" : "notes");
+
+// swap the content area in place — the sidebar updates the URL itself
+window.showContentTypeView = ctId => { currentCtId = ctId; setView("ct"); };
+window.showCategoryOverview = () => setView("all");
 
 const filterTagId = urlParams.get("tag") ? Number(urlParams.get("tag")) : null;
 const filterUncategorised = urlParams.get("uncategorised") === "true";

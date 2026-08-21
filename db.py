@@ -53,9 +53,7 @@ def init_db():
                 title        TEXT,
                 description  TEXT,
                 favicon_url  TEXT,
-                is_read      INTEGER NOT NULL DEFAULT 0,
-                created_at   TEXT    NOT NULL DEFAULT (datetime('now')),
-                read_at      TEXT
+                created_at   TEXT    NOT NULL DEFAULT (datetime('now'))
             );
 
             CREATE VIRTUAL TABLE IF NOT EXISTS links_fts USING fts5(
@@ -132,6 +130,7 @@ def init_db():
         NOTES_DIR.mkdir(parents=True, exist_ok=True)
         _migrate_to_content_types(conn)
         _drop_unused_kinds(conn)
+        _drop_read_columns(conn)
 
         # Generate UUID on first run
         existing = conn.execute("SELECT value FROM settings WHERE key='uuid'").fetchone()
@@ -182,6 +181,14 @@ def _migrate_to_content_types(conn):
     # truth and expose the same shape as a view — every read query still works.
     conn.execute("DROP TABLE link_tags")
     _ensure_link_tags_view(conn)
+
+
+def _drop_read_columns(conn):
+    """Read/unread was removed from the app; drop the columns it used."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(links)")}
+    for col in ("is_read", "read_at"):
+        if col in cols:
+            conn.execute(f"ALTER TABLE links DROP COLUMN {col}")
 
 
 def _drop_unused_kinds(conn):
