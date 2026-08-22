@@ -1358,23 +1358,6 @@ function initListDrag(ul, sel, key, save) {
   });
 }
 
-function ctRowMenu(ct) {
-  return `
-    <div class="row-menu-wrap">
-      <button class="row-overflow" type="button" title="More">
-        <i data-lucide="ellipsis-vertical"></i>
-      </button>
-      <div class="row-menu">
-        <button type="button" class="row-menu-item" data-ct-action="rename" data-id="${ct.id}">
-          <i data-lucide="square-pen"></i> Rename
-        </button>
-        <button type="button" class="row-menu-item danger" data-ct-action="delete" data-id="${ct.id}">
-          <i data-lucide="trash-2"></i> Delete
-        </button>
-      </div>
-    </div>`;
-}
-
 function renderContentTypes(ul, meta) {
   const params = new URLSearchParams(location.search);
   const activeCt = params.get("ct");
@@ -1425,7 +1408,6 @@ function renderContentTypes(ul, meta) {
       rows.push(`
         <li class="ct-heading">
           <span class="ct-heading-label">${escHtml(ct.title)}</span>
-          ${ctRowMenu(ct)}
         </li>`);
       const notes = _ctNotes[ct.id] || [];
       if (!notes.length) {
@@ -1464,7 +1446,6 @@ function renderContentTypes(ul, meta) {
             <span class="sidebar-cat-name">${escHtml(ct.title)}</span>
             ${ct.count ? `<span class="sidebar-cat-badge">${ct.count}</span>` : ""}
           </a>
-          ${ctRowMenu(ct)}
         </li>`);
     }
   }
@@ -1473,15 +1454,6 @@ function renderContentTypes(ul, meta) {
 
   ul.querySelectorAll(".row-overflow").forEach(btn => {
     btn.addEventListener("click", () => toggleRowMenu(btn));
-  });
-  ul.querySelectorAll("[data-ct-action]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      closeRowMenus();
-      const ct = _contentTypes.find(x => String(x.id) === btn.dataset.id);
-      if (!ct) return;
-      if (btn.dataset.ctAction === "rename") openContentTypeModal(ct);
-      else deleteContentType(ct);
-    });
   });
   ul.querySelectorAll("[data-note]").forEach(btn => {
     btn.addEventListener("click", () => {
@@ -1571,64 +1543,6 @@ window.reloadSidebarNotes = async () => {
   renderSidebar();
 };
 
-/* ── Content type create / rename / delete ───────────────── */
-function openContentTypeModal(ct) {
-  const modal = document.getElementById("content-type-modal");
-  if (!modal) return;
-  const tagId = _drillId === "" ? "" : _drillId;
-  document.getElementById("content-type-id").value = ct ? ct.id : "";
-  document.getElementById("content-type-tag").value = tagId;
-  document.getElementById("content-type-title").value = ct ? ct.title : "";
-  document.getElementById("content-type-kind").value = ct ? ct.kind : "links";
-  document.getElementById("content-type-kind-group").style.display = ct ? "none" : "";
-  document.getElementById("content-type-modal-title").textContent =
-    ct ? "Rename content type" : "New content type";
-  modal.showModal();
-  setTimeout(() => document.getElementById("content-type-title").focus(), 50);
-}
-
-async function submitContentType(ev) {
-  ev.preventDefault();
-  const id = document.getElementById("content-type-id").value;
-  const tagId = document.getElementById("content-type-tag").value;
-  const title = document.getElementById("content-type-title").value.trim();
-  const kind = document.getElementById("content-type-kind").value;
-  if (!title) return;
-
-  if (id) {
-    await fetch(`/api/content-types/${id}`, {
-      method: "PATCH", headers: headers(), body: JSON.stringify({ title }),
-    });
-  } else {
-    if (!tagId) { toast("Untagged can't hold content types"); return; }
-    const res = await fetch("/api/content-types", {
-      method: "POST", headers: headers(),
-      body: JSON.stringify({ tag_id: Number(tagId), kind, title }),
-    });
-    if (!res.ok) { toast("Could not create content type"); return; }
-  }
-  document.getElementById("content-type-modal").close();
-  await loadContentTypes(_drillId);
-  await loadCtNotes();
-  renderSidebar();
-  toast(id ? "Renamed" : "Content type created");
-}
-
-async function deleteContentType(ct) {
-  const ok = await showConfirm(
-    `Delete "${ct.title}"? The items inside are kept.`
-  );
-  if (!ok) return;
-  await fetch(`/api/content-types/${ct.id}`, { method: "DELETE", headers: headers() });
-  await loadContentTypes(_drillId);
-  await loadCtNotes();
-  renderSidebar();
-  toast("Content type deleted");
-  if (new URLSearchParams(location.search).get("ct") === String(ct.id)) {
-    location.search = drillQuery(_drillId) + "&type=all";
-  }
-}
-
 async function loadContentTypes(drillId) {
   if (drillId === null || drillId === "") { _contentTypes = []; return; }
   try {
@@ -1706,8 +1620,6 @@ async function loadSidebarCats() {
   } catch {}
 }
 
-
-
 /* ── Content type view ───────────────────────────────────── */
 function noteRow(note) {
   return `
@@ -1755,7 +1667,6 @@ function addLinkToContentType(ctId) {
 }
 
 window.renderContentTypeView = renderContentTypeView;
-
 
 function setPageTitle(title) {
   document.title = `${title} — Tether`;

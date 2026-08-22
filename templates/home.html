@@ -82,31 +82,6 @@
   }
 </script>
 
-<dialog id="content-type-modal" class="modal">
-  <div class="modal-content">
-    <h2 id="content-type-modal-title">New content type</h2>
-    <form id="content-type-form" onsubmit="submitContentType(event)">
-      <input type="hidden" id="content-type-id">
-      <input type="hidden" id="content-type-tag">
-      <div class="form-group">
-        <label for="content-type-title">Title</label>
-        <input type="text" id="content-type-title" placeholder="e.g. Vegan" required autocomplete="off">
-      </div>
-      <div class="form-group" id="content-type-kind-group">
-        <label for="content-type-kind">Type</label>
-        <select id="content-type-kind" class="edit-tag-select">
-          <option value="links">Links</option>
-          <option value="notes">Notes</option>
-        </select>
-      </div>
-      <div class="modal-actions">
-        <button type="button" class="btn-ghost" onclick="document.getElementById('content-type-modal').close()">Cancel</button>
-        <button type="submit" class="btn-primary">Save</button>
-      </div>
-    </form>
-  </div>
-</dialog>
-
 <dialog id="edit-modal" class="modal">
   <div class="modal-content">
     <h2>Edit link</h2>
@@ -163,5 +138,5 @@
 </dialog>
 {% endblock %}
 {% block scripts %}
-<script type="module" src="/static/notes.js?v=066"></script>
+<script type="module" src="/static/notes.js?v=067"></script>
 {% endblock %}

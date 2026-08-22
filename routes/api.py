@@ -14,7 +14,7 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, field_validator
 from typing import Any
 
-from db import db, get_setting, set_setting, NOTES_DIR, CONTENT_KINDS
+from db import db, get_setting, set_setting, NOTES_DIR
 
 router = APIRouter(prefix="/api")
 
@@ -795,17 +795,6 @@ class SettingValue(BaseModel):
 
 
 # ── Content types ────────────────────────────────────────────
-class ContentTypeCreate(BaseModel):
-    tag_id: int
-    kind: str
-    title: str
-
-
-class ContentTypeUpdate(BaseModel):
-    title: str | None = None
-    position: int | None = None
-
-
 def _content_type_dict(conn, row) -> dict:
     d = dict(row)
     table, col = (("link_content_types", "link_id") if d["kind"] == "links"
@@ -827,50 +816,6 @@ def list_content_types(tag: int | None = None, x_tether_uuid: str | None = Heade
             params.append(tag)
         sql += " ORDER BY position, id"
         return [_content_type_dict(conn, r) for r in conn.execute(sql, params).fetchall()]
-
-
-@router.post("/content-types", status_code=201)
-def create_content_type(body: ContentTypeCreate, x_tether_uuid: str | None = Header(default=None)):
-    _check_auth(x_tether_uuid)
-    if body.kind not in CONTENT_KINDS:
-        raise HTTPException(status_code=400, detail=f"kind must be one of {CONTENT_KINDS}")
-    title = body.title.strip()
-    if not title:
-        raise HTTPException(status_code=400, detail="title required")
-    with db() as conn:
-        if not conn.execute("SELECT 1 FROM tags WHERE id=?", (body.tag_id,)).fetchone():
-            raise HTTPException(status_code=404, detail="category not found")
-        pos = conn.execute(
-            "SELECT COALESCE(MAX(position), -1) + 1 p FROM content_types WHERE tag_id=?", (body.tag_id,)
-        ).fetchone()["p"]
-        cur = conn.execute(
-            "INSERT INTO content_types(tag_id, kind, title, position) VALUES (?,?,?,?)",
-            (body.tag_id, body.kind, title, pos),
-        )
-        row = conn.execute("SELECT * FROM content_types WHERE id=?", (cur.lastrowid,)).fetchone()
-        return _content_type_dict(conn, row)
-
-
-@router.patch("/content-types/{ct_id}")
-def update_content_type(ct_id: int, body: ContentTypeUpdate, x_tether_uuid: str | None = Header(default=None)):
-    _check_auth(x_tether_uuid)
-    with db() as conn:
-        if body.title is not None and body.title.strip():
-            conn.execute("UPDATE content_types SET title=? WHERE id=?", (body.title.strip(), ct_id))
-        if body.position is not None:
-            conn.execute("UPDATE content_types SET position=? WHERE id=?", (body.position, ct_id))
-        row = conn.execute("SELECT * FROM content_types WHERE id=?", (ct_id,)).fetchone()
-        if not row:
-            raise HTTPException(status_code=404)
-        return _content_type_dict(conn, row)
-
-
-@router.delete("/content-types/{ct_id}", status_code=204)
-def delete_content_type(ct_id: int, x_tether_uuid: str | None = Header(default=None)):
-    """Removes the bucket. Items survive — they just lose this membership."""
-    _check_auth(x_tether_uuid)
-    with db() as conn:
-        conn.execute("DELETE FROM content_types WHERE id=?", (ct_id,))
 
 
 class MembershipBody(BaseModel):
