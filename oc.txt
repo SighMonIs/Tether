@@ -1,9 +1,0 @@
-onclick="addNewImportTags
-onclick="addNewLinkTags
-onclick="addNewQuickAddTags
-onclick="confirmTagDelete
-onclick="document
-onclick="hideRefreshToast
-onclick="openAddLink
-onclick="openNewTagModal
-onclick="switchAddTab
