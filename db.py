@@ -42,9 +42,10 @@ def init_db():
             );
 
             CREATE TABLE IF NOT EXISTS tags (
-                id    INTEGER PRIMARY KEY AUTOINCREMENT,
-                name  TEXT    NOT NULL UNIQUE COLLATE NOCASE,
-                color TEXT    NOT NULL DEFAULT '#6366f1'
+                id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                name     TEXT    NOT NULL UNIQUE COLLATE NOCASE,
+                color    TEXT    NOT NULL DEFAULT '#6366f1',
+                position INTEGER NOT NULL DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS links (
@@ -132,6 +133,8 @@ def init_db():
         _drop_unused_kinds(conn)
         _drop_read_columns(conn)
         _file_orphan_notes(conn)
+        _add_tag_position(conn)
+        _ensure_default_content_types(conn)
 
         # Generate UUID on first run
         existing = conn.execute("SELECT value FROM settings WHERE key='uuid'").fetchone()
@@ -182,6 +185,32 @@ def _migrate_to_content_types(conn):
     # truth and expose the same shape as a view — every read query still works.
     conn.execute("DROP TABLE link_tags")
     _ensure_link_tags_view(conn)
+
+
+def _add_tag_position(conn):
+    """Categories are drag-orderable, so they need a stored order."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(tags)")}
+    if "position" in cols:
+        return
+    conn.execute("ALTER TABLE tags ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
+    rows = conn.execute("SELECT id FROM tags ORDER BY name").fetchall()
+    conn.executemany("UPDATE tags SET position=? WHERE id=?",
+                     [(i, r["id"]) for i, r in enumerate(rows)])
+
+
+def _ensure_default_content_types(conn):
+    """Every category holds Links and Notes. Without this a freshly created
+    category drills into an empty sidebar."""
+    for tag in conn.execute("SELECT id FROM tags").fetchall():
+        for pos, kind in enumerate(("links", "notes")):
+            exists = conn.execute(
+                "SELECT 1 FROM content_types WHERE tag_id=? AND kind=?", (tag["id"], kind)
+            ).fetchone()
+            if not exists:
+                conn.execute(
+                    "INSERT INTO content_types(tag_id, kind, title, position) VALUES (?,?,?,?)",
+                    (tag["id"], kind, kind.capitalize(), pos),
+                )
 
 
 def _file_orphan_notes(conn):

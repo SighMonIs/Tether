@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=115">
+  <link rel="stylesheet" href="/static/style.css?v=116">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <meta name="tether-uuid" content="{{ tether_uuid | default('') }}">
 </head>
@@ -22,6 +22,36 @@
     </a>
 
     {% if request.url.path == '/' %}
+    <div class="add-link-wrap">
+      <button type="button" class="topbar-add" id="topbar-add" title="Add link">
+        <i data-lucide="plus"></i>
+      </button>
+      <div class="add-panel" id="add-panel">
+        <form id="add-panel-form" onsubmit="submitAddPanel(event)">
+          <label class="add-field">
+            <span>URL</span>
+            <input type="url" id="add-panel-url" placeholder="https://…" required autocomplete="off">
+          </label>
+          <div class="add-status" id="add-panel-status"></div>
+          <label class="add-field">
+            <span>Title</span>
+            <input type="text" id="add-panel-title" placeholder="Page title" autocomplete="off">
+          </label>
+          <label class="add-field">
+            <span>Description</span>
+            <textarea id="add-panel-desc" rows="3" placeholder="What is this about?"></textarea>
+          </label>
+          <label class="add-field">
+            <span>Category</span>
+            <select id="add-panel-category" class="edit-tag-select"></select>
+          </label>
+          <div class="add-actions">
+            <button type="button" class="btn-ghost" onclick="closeAddPanel()">Cancel</button>
+            <button type="submit" class="btn-primary" id="add-panel-save">Save</button>
+          </div>
+        </form>
+      </div>
+    </div>
     <div class="topbar-search search-box">
       <i data-lucide="search"></i>
       <input type="text" id="search-input" placeholder="Search links and notes…" autocomplete="off">
@@ -227,7 +257,7 @@
     </button>
   </div>
 
-  <script src="/static/app.js?v=084"></script>
+  <script src="/static/app.js?v=086"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

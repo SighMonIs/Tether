@@ -213,13 +213,13 @@ def list_tags(
     _check_auth(x_tether_uuid)
     with db() as conn:
         rows = conn.execute("""
-            SELECT t.id, t.name, t.color
+            SELECT t.id, t.name, t.color, t.position
             FROM tags t
-            ORDER BY t.name
+            ORDER BY t.position, t.name
         """).fetchall()
     result = [dict(r) for r in rows]
     if shortcut:
-        result.append({"id": "__new__", "name": NEW_TAG_SENTINEL, "color": "#888899"})
+        result.append({"id": "__new__", "name": NEW_TAG_SENTINEL, "color": "#888899", "position": 9999})
     return result
 
 
@@ -233,9 +233,31 @@ def create_tag(body: TagCreate, x_tether_uuid: str | None = Header(default=None)
     _check_auth(x_tether_uuid)
     with db() as conn:
         color = body.color or _next_color(conn)
-        conn.execute("INSERT OR IGNORE INTO tags(name, color) VALUES (?,?)", (body.name.strip(), color))
-        row = conn.execute("SELECT id, name, color FROM tags WHERE name=?", (body.name.strip(),)).fetchone()
+        pos = conn.execute("SELECT COALESCE(MAX(position), -1) + 1 p FROM tags").fetchone()["p"]
+        conn.execute("INSERT OR IGNORE INTO tags(name, color, position) VALUES (?,?,?)",
+                     (body.name.strip(), color, pos))
+        row = conn.execute("SELECT id, name, color, position FROM tags WHERE name=?",
+                           (body.name.strip(),)).fetchone()
+        for i, kind in enumerate(("links", "notes")):
+            if not conn.execute("SELECT 1 FROM content_types WHERE tag_id=? AND kind=?",
+                                (row["id"], kind)).fetchone():
+                conn.execute(
+                    "INSERT INTO content_types(tag_id, kind, title, position) VALUES (?,?,?,?)",
+                    (row["id"], kind, kind.capitalize(), i),
+                )
     return dict(row)
+
+
+class TagReorder(BaseModel):
+    order: list[int]
+
+
+@router.patch("/tags/reorder", status_code=204)
+def reorder_tags(body: TagReorder, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    with db() as conn:
+        conn.executemany("UPDATE tags SET position=? WHERE id=?",
+                         [(i, tag_id) for i, tag_id in enumerate(body.order)])
 
 
 class TagUpdate(BaseModel):
@@ -343,6 +365,11 @@ async def create_link(
     if not url:
         raise HTTPException(status_code=422, detail="url is required")
 
+    # the add form previews the metadata and may have edited it, so take what it sends
+    title = (data.get("title") or "").strip() or None
+    description = (data.get("description") or "").strip() or None
+    favicon_url = (data.get("favicon_url") or "").strip() or None
+
     raw_tags = data.get("tags", [])
     if isinstance(raw_tags, list):
         tags = [str(t).strip() for t in raw_tags if str(t).strip()]
@@ -366,8 +393,8 @@ async def create_link(
 
     with db() as conn:
         conn.execute(
-            "INSERT INTO links(id, url) VALUES (?,?)",
-            (link_id, url)
+            "INSERT INTO links(id, url, title, description, favicon_url) VALUES (?,?,?,?,?)",
+            (link_id, url, title, description, favicon_url)
         )
         for tag_name in tags:
             color = _next_color(conn)
@@ -376,7 +403,9 @@ async def create_link(
             if tag_row:
                 _link_tag_write(conn, link_id, tag_row["id"])
 
-    background_tasks.add_task(_fetch_metadata, link_id, url)
+    # only go scraping when the caller had nothing to give us
+    if not title:
+        background_tasks.add_task(_fetch_metadata, link_id, url)
     return {"id": link_id}
 
 
@@ -446,11 +475,12 @@ def _link_rows(conn, rows):
 def uncategorised_count(x_tether_uuid: str | None = Header(default=None)):
     _check_auth(x_tether_uuid)
     with db() as conn:
-        count = conn.execute(
+        links = conn.execute(
             "SELECT COUNT(*) FROM links WHERE NOT EXISTS "
             "(SELECT 1 FROM link_tags lt WHERE lt.link_id = links.id)"
         ).fetchone()[0]
-    return {"count": count}
+        notes = conn.execute("SELECT COUNT(*) FROM notes WHERE tag_id IS NULL").fetchone()[0]
+    return {"count": links + notes, "links": links, "notes": notes}
 
 
 @router.get("/links")
@@ -527,6 +557,7 @@ def cleanup_links(value: int, unit: str, x_tether_uuid: str | None = Header(defa
 class LinkUpdate(BaseModel):
     tags: list[str] | None = None
     title: str | None = None
+    description: str | None = None
     url: str | None = None
 
 
@@ -550,6 +581,8 @@ def update_link(
     with db() as conn:
         if body.title is not None:
             conn.execute("UPDATE links SET title=? WHERE id=?", (body.title.strip(), link_id))
+        if body.description is not None:
+            conn.execute("UPDATE links SET description=? WHERE id=?", (body.description.strip(), link_id))
         if body.url is not None:
             conn.execute("UPDATE links SET url=? WHERE id=?", (body.url.strip(), link_id))
         if body.tags is not None:
@@ -896,7 +929,7 @@ def list_content_type_items(ct_id: int, x_tether_uuid: str | None = Header(defau
         else:
             rows = conn.execute(
                 f"{_NOTE_SELECT} JOIN note_content_types nct ON nct.note_id=n.id "
-                "WHERE nct.content_type_id=? ORDER BY n.updated_at DESC", (ct_id,)
+                "WHERE nct.content_type_id=? ORDER BY n.position ASC", (ct_id,)
             ).fetchall()
             out["notes"] = [_note_dict(r) for r in rows]
         return out

@@ -1064,6 +1064,107 @@ async function saveLink(e) {
   }
 }
 
+/* ── Add link panel ──────────────────────────────────────── */
+let _addPanelMeta = {};      // favicon from the preview, carried to the save
+let _addPreviewSeq = 0;      // ignore previews that resolve out of order
+
+function openAddPanel() {
+  const panel = document.getElementById("add-panel");
+  if (!panel) return;
+  panel.classList.add("open");
+  const sel = document.getElementById("add-panel-category");
+  const current = new URLSearchParams(location.search).get("tag");
+  sel.innerHTML = `<option value="">Untagged</option>` +
+    _sidebarTags.map(t =>
+      `<option value="${t.id}" ${String(t.id) === current ? "selected" : ""}>${escHtml(t.name)}</option>`
+    ).join("");
+  setTimeout(() => document.getElementById("add-panel-url").focus(), 30);
+}
+
+function closeAddPanel() {
+  const panel = document.getElementById("add-panel");
+  if (!panel) return;
+  panel.classList.remove("open");
+  document.getElementById("add-panel-form").reset();
+  document.getElementById("add-panel-status").textContent = "";
+  _addPanelMeta = {};
+}
+
+async function previewAddPanelUrl() {
+  const url = document.getElementById("add-panel-url").value.trim();
+  const status = document.getElementById("add-panel-status");
+  if (!url) return;
+  const seq = ++_addPreviewSeq;
+  status.textContent = "Fetching page info…";
+  try {
+    const res = await fetch(`/api/metadata/preview?url=${encodeURIComponent(url)}`, { headers: headers() });
+    if (seq !== _addPreviewSeq) return;          // a newer paste won
+    const meta = res.ok ? await res.json() : {};
+    _addPanelMeta = meta;
+    const title = document.getElementById("add-panel-title");
+    const desc = document.getElementById("add-panel-desc");
+    // never clobber something the user has already typed
+    if (!title.value && meta.title) title.value = meta.title;
+    if (!desc.value && meta.description) desc.value = meta.description;
+    status.textContent = meta.title ? "Found page info — edit it if you like." : "No page info found.";
+  } catch {
+    if (seq === _addPreviewSeq) status.textContent = "Could not reach that page.";
+  }
+}
+
+async function submitAddPanel(ev) {
+  ev.preventDefault();
+  const btn = document.getElementById("add-panel-save");
+  const url = document.getElementById("add-panel-url").value.trim();
+  const tagId = document.getElementById("add-panel-category").value;
+  const tag = _sidebarTags.find(t => String(t.id) === String(tagId));
+  if (!url) return;
+
+  btn.disabled = true;
+  const res = await fetch("/api/links", {
+    method: "POST",
+    headers: headers(),
+    body: JSON.stringify({
+      url,
+      title: document.getElementById("add-panel-title").value.trim(),
+      description: document.getElementById("add-panel-desc").value.trim(),
+      favicon_url: _addPanelMeta.favicon_url || "",
+      tags: tag ? [tag.name] : [],
+    }),
+  });
+  btn.disabled = false;
+
+  if (!res.ok) { toast("Could not save that link"); return; }
+  const body = await res.json();
+  closeAddPanel();
+  toast(body.duplicate ? "Already saved" : "Link saved");
+  await loadSidebarCats();
+  if (typeof loadLinks === "function") await loadLinks();
+  const ctId = new URLSearchParams(location.search).get("ct");
+  if (ctId) renderContentTypeView(ctId);
+  else window.showCategoryOverview?.();
+}
+
+function initAddPanel() {
+  const btn = document.getElementById("topbar-add");
+  const panel = document.getElementById("add-panel");
+  if (!btn || !panel) return;
+  btn.addEventListener("click", ev => {
+    ev.stopPropagation();
+    panel.classList.contains("open") ? closeAddPanel() : openAddPanel();
+  });
+  panel.addEventListener("click", ev => ev.stopPropagation());
+  document.addEventListener("click", () => {
+    if (panel.classList.contains("open")) closeAddPanel();
+  });
+  document.addEventListener("keydown", ev => {
+    if (ev.key === "Escape" && panel.classList.contains("open")) closeAddPanel();
+  });
+  const url = document.getElementById("add-panel-url");
+  url.addEventListener("change", previewAddPanelUrl);
+  url.addEventListener("paste", () => setTimeout(previewAddPanelUrl, 0));
+}
+
 /* ── Sidebar categories ──────────────────────────────────── */
 // Two states: the category list, and one category drilled down to its content
 // types. The drill is derived from the URL so a reload keeps you where you were.
@@ -1137,8 +1238,8 @@ function renderCategoryList(ul) {
 
   // navigating loads the category's overview; the sidebar lands drilled in
   const row = (id, name, color, badge, menu) => `
-    <li>
-      <a href="/?${drillQuery(id)}&type=all"
+    <li ${id === "" ? "" : `data-order="${id}"`}>
+      <a href="/?${drillQuery(id)}&type=all" ${id === "" ? "" : `data-cat="${id}"`}
          class="sidebar-cat-link ${(id === "" ? activeUncat : activeTag === String(id)) ? "active" : ""}">
         ${folderSvg(color)}
         <span class="sidebar-cat-name">${name}</span>
@@ -1154,8 +1255,9 @@ function renderCategoryList(ul) {
     </li>`;
 
   ul.innerHTML =
-    row("", "Untagged", "var(--n-500)",
-        _uncatCount > 0 ? `<span class="sidebar-cat-badge">${_uncatCount}</span>` : "", "") +
+    (_uncatCount > 0
+      ? row("", "Untagged", "var(--n-500)", `<span class="sidebar-cat-badge">${_uncatCount}</span>`, "")
+      : "") +
     _sidebarTags.map(t => row(t.id, escHtml(t.name), escHtml(t.color), "", `
       <button type="button" class="row-menu-item" data-action="rename" data-id="${t.id}">
         <i data-lucide="square-pen"></i> Edit
@@ -1165,6 +1267,55 @@ function renderCategoryList(ul) {
       </button>`)).join("");
 
   bindRowMenus(ul);
+  initListDrag(ul, "[data-cat]", "cat", async ids => {
+    await fetch("/api/tags/reorder", {
+      method: "PATCH", headers: headers(),
+      body: JSON.stringify({ order: ids.filter(Boolean).map(Number) }),
+    });
+    _sidebarTags.sort((a, b) => ids.indexOf(String(a.id)) - ids.indexOf(String(b.id)));
+  });
+}
+
+/* ── Drag to reorder ─────────────────────────────────────── */
+// Rows are dragged by their <li>; `sel` marks which rows take part, so the
+// Untagged row and the Notes heading stay put.
+function initListDrag(ul, sel, key, save) {
+  const items = [...ul.querySelectorAll(sel)]
+    .map(el => el.closest("li"))
+    .filter(li => li && li.dataset.order !== undefined);
+  if (items.length < 2) return;
+
+  let dragging = null;
+  for (const li of items) {
+    li.draggable = true;
+    li.addEventListener("dragstart", ev => {
+      dragging = li;
+      li.classList.add("dragging");
+      ev.dataTransfer.effectAllowed = "move";
+      ev.dataTransfer.setData("text/plain", li.dataset.order);
+    });
+    li.addEventListener("dragend", async () => {
+      li.classList.remove("dragging");
+      if (!dragging) return;
+      dragging = null;
+      const ids = [...ul.querySelectorAll(sel)].map(el => el.closest("li").dataset.order);
+      await save(ids);
+    });
+  }
+
+  ul.addEventListener("dragover", ev => {
+    if (!dragging) return;
+    ev.preventDefault();
+    const after = items
+      .filter(li => li !== dragging && li.isConnected)
+      .reduce((closest, li) => {
+        const box = li.getBoundingClientRect();
+        const offset = ev.clientY - box.top - box.height / 2;
+        return offset < 0 && offset > closest.offset ? { offset, el: li } : closest;
+      }, { offset: -Infinity, el: null }).el;
+    if (after) ul.insertBefore(dragging, after);
+    else ul.appendChild(dragging);
+  });
 }
 
 function ctRowMenu(ct) {
@@ -1187,8 +1338,33 @@ function ctRowMenu(ct) {
 function renderContentTypes(ul, meta) {
   const params = new URLSearchParams(location.search);
   const activeCt = params.get("ct");
+  const activeType = params.get("type");
   const qs = drillQuery(_drillId);
   const rows = [];
+
+  // Untagged is the absence of a category, so it owns no content types — give it
+  // the same two rows backed by the built-in filtered views
+  if (_drillId === "") {
+    rows.push(`
+      <li>
+        <a href="/?${qs}&type=links" class="sidebar-cat-link ${activeType === "links" ? "active" : ""}">
+          <i data-lucide="link"></i>
+          <span class="sidebar-cat-name">Links</span>
+        </a>
+      </li>
+      <li class="ct-heading"><span class="ct-heading-label">Notes</span></li>`);
+    const notes = _ctNotes.untagged || [];
+    rows.push(notes.length
+      ? notes.map(n => `
+        <li data-order="${n.id}">
+          <button type="button" class="sidebar-cat-link ct-note" data-note="${n.id}"
+                  title="${n.link_id ? "Note on a saved link" : ""}">
+            <i data-lucide="${n.link_id ? "link" : "file-text"}"></i>
+            <span class="sidebar-cat-name">${escHtml(n.title || "Untitled")}</span>
+          </button>
+        </li>`).join("")
+      : `<li class="sidebar-empty">No notes yet.</li>`);
+  }
 
   for (const ct of _contentTypes) {
     if (ct.kind === "notes") {
@@ -1204,7 +1380,7 @@ function renderContentTypes(ul, meta) {
       } else {
         for (const n of notes) {
           rows.push(`
-            <li>
+            <li data-order="${n.id}">
               <button type="button" class="sidebar-cat-link ct-note" data-note="${n.id}"
                       title="${n.link_id ? "Note on a saved link" : ""}">
                 <i data-lucide="${n.link_id ? "link" : "file-text"}"></i>
@@ -1246,6 +1422,11 @@ function renderContentTypes(ul, meta) {
       markSidebarActive(null);
       btn.classList.add("active");
       window.openNoteById?.(btn.dataset.note);
+    });
+  });
+  initListDrag(ul, "[data-note]", "note", async ids => {
+    await fetch("/api/notes/reorder", {
+      method: "PATCH", headers: headers(), body: JSON.stringify({ order: ids }),
     });
   });
   ul.querySelectorAll("[data-ct]").forEach(a => {
@@ -1294,6 +1475,13 @@ window.addEventListener("popstate", () => {
 
 async function loadCtNotes() {
   _ctNotes = {};
+  if (_drillId === "") {
+    try {
+      const res = await fetch("/api/notes?uncategorised=true", { headers: headers() });
+      _ctNotes.untagged = res.ok ? await res.json() : [];
+    } catch { _ctNotes.untagged = []; }
+    return;
+  }
   await Promise.all(_contentTypes.filter(ct => ct.kind === "notes").map(async ct => {
     try {
       const res = await fetch(`/api/content-types/${ct.id}/items`, { headers: headers() });
@@ -1519,6 +1707,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadSidebarCats();
   initSidebarResize();
   initSidebarBack();
+  initAddPanel();
 
   const addUrl = new URLSearchParams(location.search).get("add");
   if (addUrl) {
