@@ -25,7 +25,7 @@
       <span>Tether</span>
     </a>
 
-    {% if request.url.path == '/' %}
+    {% if view %}
     <div class="add-link-wrap">
       <button type="button" class="topbar-add" id="topbar-add" title="Add link">
         <i data-lucide="plus"></i>
@@ -50,6 +50,7 @@
             <select id="add-panel-category" class="edit-tag-select"></select>
           </label>
           <div class="add-actions">
+            <button type="button" class="add-bulk" onclick="openBulkImport()">Paste several…</button>
             <button type="button" class="btn-ghost" onclick="closeAddPanel()">Cancel</button>
             <button type="submit" class="btn-primary" id="add-panel-save">Save</button>
           </div>

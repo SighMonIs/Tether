@@ -727,8 +727,6 @@ function removeAddLinkTag(i) {
   renderAddLinkTags();
 }
 
-let _pendingContentType = null;   // set when adding from inside a content type
-
 async function submitAddLink(e) {
   e.preventDefault();
   const url = document.getElementById("add-link-url").value.trim();
@@ -738,22 +736,9 @@ async function submitAddLink(e) {
     body: JSON.stringify({ url, tags: _addLinkTags.map(t => t.name) }),
   });
   if (res.ok) {
-    const { id } = await res.json();
-    if (_pendingContentType && id) {
-      await fetch(`/api/content-types/${_pendingContentType}/items`, {
-        method: "POST", headers: headers(),
-        body: JSON.stringify({ item_kind: "link", item_id: id }),
-      });
-    }
     document.getElementById("add-link-modal").close();
     toast("Link saved!");
-    const ct = _pendingContentType;
-    _pendingContentType = null;
-    if (ct) {
-      await loadContentTypes(_drillId);
-      renderSidebar();
-      renderContentTypeView(ct);
-    } else if (document.getElementById("links-container")) {
+    if (document.getElementById("links-container")) {
       await Promise.all([loadLinks(), loadSidebarCats(), updateCounts()]);
     } else {
       setTimeout(() => window.location.href = "/", 400);
@@ -1183,6 +1168,13 @@ async function submitAddPanel(ev) {
   const ctId = new URLSearchParams(location.search).get("ct");
   if (ctId) renderContentTypeView(ctId);
   else window.showCategoryOverview?.();
+}
+
+// the bulk paste form lives in the add-link modal, which the panel now fronts
+async function openBulkImport() {
+  closeAddPanel();
+  await openAddLink();
+  switchAddTab("import");
 }
 
 function initAddPanel() {
@@ -1650,41 +1642,139 @@ function noteRow(note) {
     </div>`;
 }
 
+let _ctData = null;                                  // the fetched bucket, unfiltered
+let _ctFilter = { site: "", from: "", to: "" };
+
+function ctFilterCount() {
+  return [_ctFilter.site, _ctFilter.from, _ctFilter.to].filter(Boolean).length;
+}
+
+function filteredCtLinks() {
+  const links = (_ctData && _ctData.links) || [];
+  return links.filter(l => {
+    if (_ctFilter.site && getDomain(l.url) !== _ctFilter.site) return false;
+    // created_at is "YYYY-MM-DD HH:MM:SS", so a plain string compare on the date works
+    const day = (l.created_at || "").slice(0, 10);
+    if (_ctFilter.from && day < _ctFilter.from) return false;
+    if (_ctFilter.to && day > _ctFilter.to) return false;
+    return true;
+  });
+}
+
+function ctFilterPanel() {
+  const links = (_ctData && _ctData.links) || [];
+  const counts = {};
+  for (const l of links) {
+    const d = getDomain(l.url);
+    counts[d] = (counts[d] || 0) + 1;
+  }
+  const sites = Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b));
+  const n = ctFilterCount();
+  return `
+    <div class="filter-wrap">
+      <button type="button" class="btn-ghost filter-btn ${n ? "on" : ""}" id="ct-filter-btn">
+        <i data-lucide="list-filter"></i> Filter${n ? ` · ${n}` : ""}
+      </button>
+      <div class="filter-panel" id="ct-filter-panel">
+        <label class="add-field">
+          <span>Website</span>
+          <select id="filter-site" class="edit-tag-select">
+            <option value="">All websites</option>
+            ${sites.map(d => `
+              <option value="${escHtml(d)}" ${_ctFilter.site === d ? "selected" : ""}>
+                ${escHtml(d)} (${counts[d]})
+              </option>`).join("")}
+          </select>
+        </label>
+        <div class="filter-dates">
+          <label class="add-field">
+            <span>Saved from</span>
+            <input type="date" id="filter-from" value="${_ctFilter.from}">
+          </label>
+          <label class="add-field">
+            <span>Saved to</span>
+            <input type="date" id="filter-to" value="${_ctFilter.to}">
+          </label>
+        </div>
+        <div class="add-actions">
+          <button type="button" class="btn-ghost" id="filter-clear">Clear</button>
+          <button type="button" class="btn-primary" id="filter-apply">Apply</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function bindCtFilter(pane, ctId) {
+  const btn = pane.querySelector("#ct-filter-btn");
+  const panel = pane.querySelector("#ct-filter-panel");
+  if (!btn || !panel) return;
+
+  const close = () => panel.classList.remove("open");
+  btn.addEventListener("click", ev => {
+    ev.stopPropagation();
+    panel.classList.toggle("open");
+  });
+  panel.addEventListener("click", ev => ev.stopPropagation());
+  document.addEventListener("click", close);
+
+  pane.querySelector("#filter-apply").addEventListener("click", () => {
+    _ctFilter = {
+      site: pane.querySelector("#filter-site").value,
+      from: pane.querySelector("#filter-from").value,
+      to: pane.querySelector("#filter-to").value,
+    };
+    close();
+    renderCtPane(ctId);
+  });
+  pane.querySelector("#filter-clear").addEventListener("click", () => {
+    _ctFilter = { site: "", from: "", to: "" };
+    close();
+    renderCtPane(ctId);
+  });
+}
+
+function renderCtPane(ctId) {
+  const pane = document.getElementById("ct-pane");
+  if (!pane || !_ctData) return;
+  const ct = _ctData.content_type;
+  const kind = ct.kind;
+  const links = kind === "links" ? filteredCtLinks() : [];
+  const n = ctFilterCount();
+
+  const head = `
+    <div class="ct-head">
+      <h1>${escHtml(ct.title)}</h1>
+      <span class="ct-kind">${KIND_LABEL[kind] || kind}</span>
+      ${kind === "links" ? ctFilterPanel() : ""}
+    </div>`;
+
+  let body;
+  if (kind === "links") {
+    body = links.map(l => linkCardHtml(l)).join("")
+      || `<div class="empty-state">${n ? "No links match that filter." : "No links in here yet."}</div>`;
+    if (n) {
+      body = `<div class="filter-summary">Showing ${links.length} of ${_ctData.links.length}</div>` + body;
+    }
+  } else {
+    body = _ctData.notes.map(noteRow).join("")
+      || '<div class="empty-state">No notes in here yet.</div>';
+  }
+
+  pane.innerHTML = head + body;
+  bindLinkRowMenus(pane);
+  if (kind === "links") bindCtFilter(pane, ctId);
+  lucide.createIcons();
+}
+
 async function renderContentTypeView(ctId) {
   const pane = document.getElementById("ct-pane");
   if (!pane) return;
   pane.innerHTML = '<div class="loading-state">Loading…</div>';
   const res = await fetch(`/api/content-types/${ctId}/items`, { headers: headers() });
   if (!res.ok) { pane.innerHTML = '<div class="empty-state">Not found.</div>'; return; }
-  const data = await res.json();
-  const ct = data.content_type;
-  const kind = ct.kind;
-
-  const head = `
-    <div class="ct-head">
-      <h1>${escHtml(ct.title)}</h1>
-      <span class="ct-kind">${KIND_LABEL[kind] || kind}</span>
-      ${kind === "links"
-        ? `<button class="btn-primary" onclick="addLinkToContentType(${ct.id})">
-             <i data-lucide="plus"></i> Add link
-           </button>` : ""}
-    </div>`;
-
-  const body = kind === "links"
-    ? (data.links.map(l => linkCardHtml(l)).join("")
-       || '<div class="empty-state">No links in here yet.</div>')
-    : (data.notes.map(noteRow).join("")
-       || '<div class="empty-state">No notes in here yet.</div>');
-
-  pane.innerHTML = head + body;
-  bindLinkRowMenus(pane);
-  lucide.createIcons();
-}
-
-function addLinkToContentType(ctId) {
-  const t = _sidebarTags.find(x => String(x.id) === String(_drillId));
-  _pendingContentType = ctId;
-  openAddLink(t ? { name: t.name, color: t.color } : undefined);
+  _ctData = await res.json();
+  _ctFilter = { site: "", from: "", to: "" };   // a fresh bucket starts unfiltered
+  renderCtPane(ctId);
 }
 
 window.renderContentTypeView = renderContentTypeView;
