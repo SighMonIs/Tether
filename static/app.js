@@ -474,16 +474,53 @@ async function clearErrorLog() {
   toast("Error log cleared");
 }
 
+function exportSelectedTags() {
+  return [...document.querySelectorAll(".export-cat:checked")].map(c => c.value);
+}
+
+function toggleAllExportCats(on) {
+  document.querySelectorAll(".export-cat").forEach(c => { c.checked = on; });
+  updateExportScopeLabel();
+}
+
+function updateExportScopeLabel() {
+  const label = document.getElementById("export-scope");
+  if (!label) return;
+  const n = exportSelectedTags().length;
+  label.textContent = n ? `${n} categor${n === 1 ? "y" : "ies"} selected` : "All categories";
+}
+
+async function fillExportCategories() {
+  const box = document.getElementById("export-cats");
+  if (!box) return;
+  const res = await fetch("/api/tags", { headers: headers() });
+  const tags = res.ok ? await res.json() : [];
+  box.innerHTML = tags.map(t => `
+    <label class="export-cat-row">
+      <input type="checkbox" class="export-cat" value="${t.id}" onchange="updateExportScopeLabel()">
+      <span class="sidebar-cat-dot" style="background:${escHtml(t.color)}"></span>
+      <span>${escHtml(t.name)}</span>
+    </label>`).join("");
+  updateExportScopeLabel();
+}
+
 const EXPORT_KINDS = {
   links: { url: "/api/export", filename: "tether-export.json" },
   notes: { url: "/api/export/notes", filename: "tether-notes.zip" },
   all: { url: "/api/export/all", filename: "tether-export.zip" },
 };
 
-function doExport(kind, tagId) {
+// tagIds: undefined/empty = everything, otherwise the chosen categories
+function openExportModal() {
+  fillExportCategories();
+  document.getElementById("export-modal")?.showModal();
+}
+
+function doExport(kind, tagIds) {
   document.getElementById("export-modal")?.close();
   const { url, filename } = EXPORT_KINDS[kind];
-  const finalUrl = tagId ? `${url}?tag=${tagId}` : url;
+  const list = [].concat(tagIds || []).filter(Boolean);
+  const finalUrl = list.length ? `${url}?tags=${list.join(",")}` : url;
   fetch(finalUrl, { headers: headers() })
     .then(r => r.blob())
     .then(blob => {
@@ -1262,6 +1299,9 @@ function renderCategoryList(ul) {
       <button type="button" class="row-menu-item" data-action="rename" data-id="${t.id}">
         <i data-lucide="square-pen"></i> Edit
       </button>
+      <button type="button" class="row-menu-item" data-action="export" data-id="${t.id}">
+        <i data-lucide="download"></i> Export data
+      </button>
       <button type="button" class="row-menu-item danger" data-action="delete" data-id="${t.id}">
         <i data-lucide="trash-2"></i> Delete
       </button>`)).join("");
@@ -1570,6 +1610,12 @@ function bindRowMenus(ul) {
       closeRowMenus();
       const t = _sidebarTags.find(x => x.id === Number(btn.dataset.id));
       if (t) openEditTag(t.id, t.name, t.color);
+    });
+  });
+  ul.querySelectorAll('[data-action="export"]').forEach(btn => {
+    btn.addEventListener("click", () => {
+      closeRowMenus();
+      doExport("all", btn.dataset.id);
     });
   });
   ul.querySelectorAll('[data-action="delete"]').forEach(btn => {

@@ -1465,6 +1465,49 @@ a.ov-viewall { text-decoration: underline; }
   margin-top: 0.75rem;
 }
 
+.export-scope {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  margin-bottom: 4px;
+}
+.export-scope-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.export-scope-label { font-size: 12.5px; color: var(--n-200); }
+.export-scope-actions { display: flex; gap: 10px; }
+.export-scope-actions button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--n-400);
+  font-family: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.export-scope-actions button:hover { color: var(--text); }
+.export-cats {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 2px 12px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.export-cat-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 0;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.export-cat-row input { accent-color: var(--n-400); }
+
 .export-options {
   display: flex;
   flex-direction: column;

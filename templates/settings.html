@@ -103,7 +103,7 @@
           <h2>Export &amp; Import</h2>
           <p>Export your links, notes, or both, or import a previously exported links JSON file. Importing will add any links that don't already exist — it won't overwrite or delete anything.</p>
           <div style="display:flex;gap:0.75rem;flex-wrap:wrap;margin-top:0.75rem">
-            <button class="btn-primary" onclick="document.getElementById('export-modal').showModal()">Export data</button>
+            <button class="btn-primary" onclick="openExportModal()">Export data</button>
             <label class="btn-ghost" style="cursor:pointer">
               Import data
               <input type="file" accept=".json" style="display:none" onchange="importData(this)">
@@ -258,22 +258,33 @@
 <dialog id="export-modal" class="modal">
   <div class="modal-content">
     <h2>Export data</h2>
+    <div class="export-scope">
+      <div class="export-scope-head">
+        <span class="export-scope-label" id="export-scope">All categories</span>
+        <span class="export-scope-actions">
+          <button type="button" onclick="toggleAllExportCats(true)">Select all</button>
+          <button type="button" onclick="toggleAllExportCats(false)">Clear</button>
+        </span>
+      </div>
+      <div class="export-cats" id="export-cats"></div>
+      <p class="form-note">Leave all unticked to export everything.</p>
+    </div>
     <div class="export-options">
-      <button type="button" class="export-option" onclick="doExport('links')">
+      <button type="button" class="export-option" onclick="doExport('links', exportSelectedTags())">
         <i data-lucide="link"></i>
         <span>
           <strong>Links only</strong>
           <small>A JSON file with your links and tags</small>
         </span>
       </button>
-      <button type="button" class="export-option" onclick="doExport('notes')">
+      <button type="button" class="export-option" onclick="doExport('notes', exportSelectedTags())">
         <i data-lucide="file-text"></i>
         <span>
           <strong>Notes only</strong>
           <small>A ZIP file with each note as a .md file</small>
         </span>
       </button>
-      <button type="button" class="export-option" onclick="doExport('all')">
+      <button type="button" class="export-option" onclick="doExport('all', exportSelectedTags())">
         <i data-lucide="archive"></i>
         <span>
           <strong>Everything</strong>

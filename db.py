@@ -241,11 +241,17 @@ def _file_orphan_notes(conn):
 
 
 def _drop_read_columns(conn):
-    """Read/unread was removed from the app; drop the columns it used."""
+    """Read/unread was removed from the app; drop the columns it used.
+
+    DROP COLUMN needs SQLite 3.35+. On anything older the columns simply stay —
+    nothing reads them — so a tidy-up must never stop the app from booting."""
     cols = {r[1] for r in conn.execute("PRAGMA table_info(links)")}
     for col in ("is_read", "read_at"):
         if col in cols:
-            conn.execute(f"ALTER TABLE links DROP COLUMN {col}")
+            try:
+                conn.execute(f"ALTER TABLE links DROP COLUMN {col}")
+            except sqlite3.OperationalError:
+                pass
 
 
 def _drop_unused_kinds(conn):

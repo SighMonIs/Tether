@@ -944,16 +944,31 @@ def regenerate_uuid(body: SettingValue, x_tether_uuid: str | None = Header(defau
 
 # ── Export / Import ───────────────────────────────────────────────────────────
 
-def _links_export_payload(conn, tag: int | None = None) -> dict:
+def _parse_tags(tag: int | None, tags: str | None) -> list[int] | None:
+    """Accept ?tag=1 or ?tags=1,2,3. None means every category."""
+    ids: list[int] = []
     if tag is not None:
+        ids.append(tag)
+    for part in (tags or "").split(","):
+        part = part.strip()
+        if part.isdigit():
+            ids.append(int(part))
+    return sorted(set(ids)) or None
+
+
+def _links_export_payload(conn, tag_ids: list[int] | None = None) -> dict:
+    if tag_ids:
+        marks = ",".join("?" * len(tag_ids))
         links = [dict(r) for r in conn.execute(
-            "SELECT l.id, l.url, l.title, l.description, l.favicon_url, l.created_at "
-            "FROM links l JOIN link_tags lt ON lt.link_id=l.id WHERE lt.tag_id=? ORDER BY l.created_at",
-            (tag,)
+            "SELECT DISTINCT l.id, l.url, l.title, l.description, l.favicon_url, l.created_at "
+            f"FROM links l JOIN link_tags lt ON lt.link_id=l.id WHERE lt.tag_id IN ({marks}) "
+            "ORDER BY l.created_at",
+            tag_ids
         ).fetchall()]
-        tags = [dict(r) for r in conn.execute("SELECT id, name, color FROM tags WHERE id=?", (tag,)).fetchall()]
+        tags = [dict(r) for r in conn.execute(
+            f"SELECT id, name, color FROM tags WHERE id IN ({marks})", tag_ids).fetchall()]
         link_tags = [dict(r) for r in conn.execute(
-            "SELECT link_id, tag_id FROM link_tags WHERE tag_id=?", (tag,)
+            f"SELECT link_id, tag_id FROM link_tags WHERE tag_id IN ({marks})", tag_ids
         ).fetchall()]
     else:
         links = [dict(r) for r in conn.execute(
@@ -970,12 +985,12 @@ def _note_export_filename(title: str, note_id: str) -> str:
     return f"{name}-{note_id[:8]}.md"
 
 
-def _write_notes_to_zip(zf: zipfile.ZipFile, conn, prefix: str = "", tag: int | None = None):
+def _write_notes_to_zip(zf: zipfile.ZipFile, conn, prefix: str = "", tag_ids: list[int] | None = None):
     query = "SELECT id, title FROM notes"
-    params = ()
-    if tag is not None:
-        query += " WHERE tag_id=?"
-        params = (tag,)
+    params: tuple = ()
+    if tag_ids:
+        query += f" WHERE tag_id IN ({','.join('?' * len(tag_ids))})"
+        params = tuple(tag_ids)
     for n in conn.execute(query, params).fetchall():
         path = NOTES_DIR / f"{n['id']}.md"
         content = path.read_text(encoding="utf-8") if path.exists() else ""
@@ -983,10 +998,11 @@ def _write_notes_to_zip(zf: zipfile.ZipFile, conn, prefix: str = "", tag: int | 
 
 
 @router.get("/export")
-def export_data(tag: int | None = None, x_tether_uuid: str | None = Header(default=None)):
+def export_data(tag: int | None = None, tags: str | None = None,
+                x_tether_uuid: str | None = Header(default=None)):
     _check_auth(x_tether_uuid)
     with db() as conn:
-        payload = _json.dumps(_links_export_payload(conn, tag), indent=2)
+        payload = _json.dumps(_links_export_payload(conn, _parse_tags(tag, tags)), indent=2)
     return Response(
         content=payload,
         media_type="application/json",
@@ -995,11 +1011,12 @@ def export_data(tag: int | None = None, x_tether_uuid: str | None = Header(defau
 
 
 @router.get("/export/notes")
-def export_notes(tag: int | None = None, x_tether_uuid: str | None = Header(default=None)):
+def export_notes(tag: int | None = None, tags: str | None = None,
+                 x_tether_uuid: str | None = Header(default=None)):
     _check_auth(x_tether_uuid)
     buf = io.BytesIO()
     with db() as conn, zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        _write_notes_to_zip(zf, conn, tag=tag)
+        _write_notes_to_zip(zf, conn, tag_ids=_parse_tags(tag, tags))
     return Response(
         content=buf.getvalue(),
         media_type="application/zip",
@@ -1008,12 +1025,14 @@ def export_notes(tag: int | None = None, x_tether_uuid: str | None = Header(defa
 
 
 @router.get("/export/all")
-def export_all(tag: int | None = None, x_tether_uuid: str | None = Header(default=None)):
+def export_all(tag: int | None = None, tags: str | None = None,
+               x_tether_uuid: str | None = Header(default=None)):
     _check_auth(x_tether_uuid)
+    tag_ids = _parse_tags(tag, tags)
     buf = io.BytesIO()
     with db() as conn, zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-        zf.writestr("links.json", _json.dumps(_links_export_payload(conn, tag), indent=2))
-        _write_notes_to_zip(zf, conn, prefix="notes/", tag=tag)
+        zf.writestr("links.json", _json.dumps(_links_export_payload(conn, tag_ids), indent=2))
+        _write_notes_to_zip(zf, conn, prefix="notes/", tag_ids=tag_ids)
     return Response(
         content=buf.getvalue(),
         media_type="application/zip",
