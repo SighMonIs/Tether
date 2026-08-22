@@ -121,18 +121,21 @@ body {
 .add-field .edit-tag-select { margin-top: 0; }
 .add-status { font-size: 11.5px; color: var(--subtext); min-height: 14px; }
 .add-actions { display: flex; align-items: center; gap: 8px; margin-top: 2px; }
-.add-bulk {
-  margin-right: auto;
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--n-400);
+.add-mode { align-self: flex-start; }
+.add-mode .toggle-btn { font-size: 12px; }
+#add-mode-many textarea {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
   font-family: inherit;
-  font-size: 11.5px;
-  cursor: pointer;
-  text-decoration: underline;
+  font-size: 12.5px;
+  line-height: 1.5;
+  padding: 7px 9px;
+  resize: vertical;
+  width: 100%;
 }
-.add-bulk:hover { color: var(--text); }
+#add-mode-many textarea:focus { outline: none; border-color: var(--n-500); }
 
 .topbar-search {
   width: 360px;
@@ -717,6 +720,12 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
 }
 .note-title-input::placeholder { color: var(--subtext); }
 
+.note-created {
+  font-size: 11.5px;
+  color: var(--subtext);
+  margin: -0.5rem 0 1rem;
+}
+
 .note-editor { font-size: 14.5px; line-height: 1.7; color: var(--text); }
 .note-editor .ProseMirror { outline: none; min-height: 300px; }
 .note-editor p.is-editor-empty:first-child::before {
@@ -909,15 +918,6 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
   margin-bottom: 0.25rem;
 }
 .ct-head h1 { font-size: 20px; font-weight: 500; }
-.ct-kind {
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--subtext);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 2px 8px;
-}
 .ct-head .btn-primary,
 .ct-head .filter-wrap { margin-left: auto; }
 
@@ -941,6 +941,25 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
 }
 .filter-panel.open { display: block; }
 .filter-panel .add-field { margin-bottom: 10px; }
+.filter-sites {
+  max-height: 190px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 6px;
+}
+.filter-site-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 3px 2px;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.filter-site-row > span:nth-of-type(1) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.filter-site-count { font-size: 11px; color: var(--subtext); }
+.filter-site-row input { accent-color: var(--n-400); }
+
 .filter-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .filter-panel input[type="date"] {
   background: var(--bg);

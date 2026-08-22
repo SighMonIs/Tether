@@ -25,6 +25,7 @@ const listEl = document.getElementById("notes-list");
 const titleInput = document.getElementById("note-title-input");
 const editorMount = document.getElementById("note-editor");
 const statusEl = document.getElementById("notes-save-status");
+const createdEl = document.getElementById("note-created");
 const bubbleEl = document.getElementById("bubble-toolbar");
 const linkBarEl = document.getElementById("link-toolbar");
 const categoryModal = document.getElementById("note-category-modal");
@@ -333,6 +334,14 @@ async function loadTags() {
   }
 }
 
+function showCreated(iso) {
+  if (!createdEl) return;
+  if (!iso) { createdEl.textContent = ""; return; }
+  const d = new Date(iso.replace(" ", "T") + "Z");
+  const pad = n => String(n).padStart(2, "0");
+  createdEl.textContent = `Created on: ${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+}
+
 function scheduleSave() {
   if (suppressDirty || !currentNoteId) return;
   isDirty = true;
@@ -562,6 +571,7 @@ async function openNote(id, switchTab = true) {
   setTimeout(() => { suppressDirty = false; }, 0);
 
   statusEl.textContent = "";
+  showCreated(note.created_at);
   renderList();
   window.setSidebarNote?.(id, notesCache.find(n => n.id === id)?.slug);
   updateToolbarState();

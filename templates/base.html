@@ -32,25 +32,41 @@
       </button>
       <div class="add-panel" id="add-panel">
         <form id="add-panel-form" onsubmit="submitAddPanel(event)">
-          <label class="add-field">
-            <span>URL</span>
-            <input type="url" id="add-panel-url" placeholder="https://…" required autocomplete="off">
-          </label>
-          <div class="add-status" id="add-panel-status"></div>
-          <label class="add-field">
-            <span>Title</span>
-            <input type="text" id="add-panel-title" placeholder="Page title" autocomplete="off">
-          </label>
-          <label class="add-field">
-            <span>Description</span>
-            <textarea id="add-panel-desc" rows="3" placeholder="What is this about?"></textarea>
-          </label>
+          <div class="view-toggle add-mode">
+            <button type="button" class="toggle-btn active" data-mode="one">One link</button>
+            <button type="button" class="toggle-btn" data-mode="many">Several</button>
+          </div>
+
+          <div id="add-mode-one">
+            <label class="add-field">
+              <span>URL</span>
+              <input type="url" id="add-panel-url" placeholder="https://…" autocomplete="off">
+            </label>
+            <div class="add-status" id="add-panel-status"></div>
+            <label class="add-field">
+              <span>Title</span>
+              <input type="text" id="add-panel-title" placeholder="Page title" autocomplete="off">
+            </label>
+            <label class="add-field">
+              <span>Description</span>
+              <textarea id="add-panel-desc" rows="3" placeholder="What is this about?"></textarea>
+            </label>
+          </div>
+
+          <div id="add-mode-many" style="display:none">
+            <label class="add-field">
+              <span>Links</span>
+              <textarea id="add-panel-bulk" rows="6"
+                        placeholder="Paste links here, one per line or separated by commas…"></textarea>
+            </label>
+            <p class="form-note">Titles and descriptions are fetched in the background.</p>
+          </div>
+
           <label class="add-field">
             <span>Category</span>
             <select id="add-panel-category" class="edit-tag-select"></select>
           </label>
           <div class="add-actions">
-            <button type="button" class="add-bulk" onclick="openBulkImport()">Paste several…</button>
             <button type="button" class="btn-ghost" onclick="closeAddPanel()">Cancel</button>
             <button type="submit" class="btn-primary" id="add-panel-save">Save</button>
           </div>
@@ -92,64 +108,6 @@
     <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
   </nav>
 
-  <dialog id="add-link-modal" class="modal">
-    <div class="modal-content">
-      <div class="modal-tabs">
-        <button class="modal-tab active" onclick="switchAddTab('single')">Add Link</button>
-        <button class="modal-tab" onclick="switchAddTab('import')">Import Links</button>
-      </div>
-
-      <!-- Single link tab -->
-      <form id="add-link-form" onsubmit="submitAddLink(event)">
-        <div class="form-group">
-          <label for="add-link-url">URL</label>
-          <input type="url" id="add-link-url" placeholder="https://…" required autocomplete="off">
-        </div>
-        <div class="form-group">
-          <label>Tags</label>
-          <div id="add-link-tag-list" class="edit-tag-list"></div>
-          <select id="add-link-tag-select" class="edit-tag-select" onchange="handleAddLinkTagSelect(this)">
-            <option value="">— Add tag —</option>
-            <option value="__new__">＋ Add new tag</option>
-          </select>
-          <div id="add-link-new-tag-row" class="edit-tag-add" style="display:none">
-            <input type="text" id="add-link-new-tag" placeholder="New tags, comma-separated" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewLinkTags();}">
-            <button type="button" onclick="addNewLinkTags()">Add</button>
-          </div>
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="btn-ghost" onclick="document.getElementById('add-link-modal').close()">Cancel</button>
-          <button type="submit" class="btn-primary">Save</button>
-        </div>
-      </form>
-
-      <!-- Import tab -->
-      <form id="import-links-form" onsubmit="submitImportLinks(event)" style="display:none">
-        <div class="form-group">
-          <label for="import-links-text">Links</label>
-          <textarea id="import-links-text" class="import-textarea" placeholder="Paste links here, one per line or separated by commas…" rows="6"></textarea>
-        </div>
-        <div class="form-group">
-          <label>Tags</label>
-          <p class="form-note">These tags will be applied to all imported links.</p>
-          <div id="import-tag-list" class="edit-tag-list"></div>
-          <select id="import-tag-select" class="edit-tag-select" onchange="handleImportTagSelect(this)">
-            <option value="">— Add tag —</option>
-            <option value="__new__">＋ Add new tag</option>
-          </select>
-          <div id="import-new-tag-row" class="edit-tag-add" style="display:none">
-            <input type="text" id="import-new-tag" placeholder="New tags, comma-separated" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewImportTags();}">
-            <button type="button" onclick="addNewImportTags()">Add</button>
-          </div>
-        </div>
-        <div class="modal-actions">
-          <button type="button" class="btn-ghost" onclick="document.getElementById('add-link-modal').close()">Cancel</button>
-          <button type="submit" class="btn-primary">Import</button>
-        </div>
-      </form>
-    </div>
-  </dialog>
-
   <dialog id="quick-add-modal" class="modal">
     <div class="modal-content">
       <h2>Save to Tether</h2>
@@ -164,16 +122,8 @@
           </div>
         </div>
         <div class="form-group">
-          <label>Tags</label>
-          <div id="quick-add-tag-list" class="edit-tag-list"></div>
-          <select id="quick-add-tag-select" class="edit-tag-select" onchange="handleQuickAddTagSelect(this)">
-            <option value="">— Add tag —</option>
-            <option value="__new__">＋ Add new tag</option>
-          </select>
-          <div id="quick-add-new-tag-row" class="edit-tag-add" style="display:none">
-            <input type="text" id="quick-add-new-tag" placeholder="New tags, comma-separated" autocomplete="off" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewQuickAddTags();}">
-            <button type="button" onclick="addNewQuickAddTags()">Add</button>
-          </div>
+          <label for="quick-add-category">Category</label>
+          <select id="quick-add-category" class="edit-tag-select"></select>
         </div>
         <div class="form-group">
           <label for="quick-add-note">Note <span class="form-note" style="text-transform:none;letter-spacing:normal;font-weight:400">(optional)</span></label>
@@ -199,11 +149,11 @@
 
   <dialog id="new-tag-modal" class="modal">
     <div class="modal-content">
-      <h2>New Tag</h2>
+      <h2>New Category</h2>
       <form id="new-tag-form" onsubmit="createTag(event)">
         <div class="form-group">
           <label for="new-tag-name">Name</label>
-          <input type="text" id="new-tag-name" placeholder="e.g. Design" required autocomplete="off">
+          <input type="text" id="new-tag-name" placeholder="e.g. Cooking" required autocomplete="off">
         </div>
         <div class="form-group">
           <label for="new-tag-color">Color</label>
@@ -219,7 +169,7 @@
 
   <dialog id="edit-tag-modal" class="modal">
     <div class="modal-content">
-      <h2>Edit tag</h2>
+      <h2>Edit category</h2>
       <form id="edit-tag-form" onsubmit="saveTag(event)">
         <input type="hidden" id="edit-tag-id">
         <div class="form-group">
@@ -240,7 +190,7 @@
 
   <dialog id="tag-delete-modal" class="modal">
     <div class="modal-content">
-      <h2 id="tag-delete-title">Delete tag</h2>
+      <h2 id="tag-delete-title">Delete category</h2>
       <p id="tag-delete-msg" class="hint"></p>
       <select id="tag-delete-select" class="edit-tag-select"></select>
       <div class="modal-actions">

@@ -144,12 +144,6 @@ async function updateCounts() {
 }
 
 /* ── Render helpers ──────────────────────────────────────── */
-function tagPills(tags) {
-  return tags.map(t =>
-    `<span class="tag-pill" style="border:1px solid color-mix(in srgb,${t.color} 45%,transparent);color:${t.color}">${escHtml(t.name)}</span>`
-  ).join("");
-}
-
 function escHtml(s) {
   return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
@@ -186,7 +180,6 @@ function linkCardHtml(link) {
         <i data-lucide="file-text"></i>
       </button>` : ""}
       <span class="link-meta">
-        <span class="card-tags">${tagPills(link.tags)}</span>
         <span class="link-date">${friendlyDate(link.created_at)}</span>
       </span>
       <div class="row-menu-wrap">
@@ -596,169 +589,14 @@ async function regenerateKey() {
   document.getElementById("regen-modal")?.close();
 }
 
-/* ── Add link modal ──────────────────────────────────────── */
-let _addLinkTags  = []; // [{name, color}]
-let _importTags   = []; // [{name, color}]
-
-async function openAddLink(preTag) {
-  _addLinkTags = preTag ? [preTag] : [];
-  document.getElementById("add-link-url").value = "";
-  document.getElementById("add-link-new-tag-row").style.display = "none";
-  document.getElementById("add-link-new-tag").value = "";
-  document.getElementById("import-links-text").value = "";
-  document.getElementById("import-new-tag-row").style.display = "none";
-  document.getElementById("import-new-tag").value = "";
-  _importTags = [];
-  renderAddLinkTags();
-  switchAddTab("single");
-
-  const tagsRes = await fetch("/api/tags", { headers: headers() });
-  const allTags = tagsRes.ok ? await tagsRes.json() : [];
-  const sel = document.getElementById("add-link-tag-select");
-  sel.innerHTML = '<option value="">— Add tag —</option><option value="__new__">＋ Add new tag</option>';
-  allTags.forEach(t => {
-    const opt = document.createElement("option");
-    opt.value = t.name;
-    opt.dataset.color = t.color;
-    opt.textContent = t.name;
-    sel.appendChild(opt);
-  });
-
-  // Populate import tab select too
-  const isel = document.getElementById("import-tag-select");
-  isel.innerHTML = '<option value="">— Add tag —</option><option value="__new__">＋ Add new tag</option>';
-  allTags.forEach(t => {
-    const opt = document.createElement("option");
-    opt.value = t.name;
-    opt.dataset.color = t.color;
-    opt.textContent = t.name;
-    isel.appendChild(opt);
-  });
-  renderImportTags();
-
-  document.getElementById("add-link-modal").showModal();
-  setTimeout(() => document.getElementById("add-link-url").focus(), 50);
-}
-
-function switchAddTab(tab) {
-  const isSingle = tab === "single";
-  document.getElementById("add-link-form").style.display = isSingle ? "flex" : "none";
-  document.getElementById("import-links-form").style.display = isSingle ? "none" : "flex";
-  document.querySelectorAll(".modal-tab").forEach((btn, i) => {
-    btn.classList.toggle("active", (i === 0) === isSingle);
-  });
-  if (!isSingle) setTimeout(() => document.getElementById("import-links-text").focus(), 50);
-}
-
-async function submitImportLinks(e) {
-  e.preventDefault();
-  const raw = document.getElementById("import-links-text").value;
-  const urls = raw.split(/[\n,]+/).map(s => s.trim()).filter(s => s.length > 0);
-  if (!urls.length) return;
-
-  const btn = e.submitter;
-  btn.disabled = true;
-  btn.textContent = `Importing…`;
-
-  let saved = 0;
-  for (const url of urls) {
-    const res = await fetch("/api/links", {
-      method: "POST",
-      headers: headers(),
-      body: JSON.stringify({ url, tags: _importTags.map(t => t.name) }),
-    });
-    if (res.ok) saved++;
-  }
-
-  btn.disabled = false;
-  btn.textContent = "Import";
-  document.getElementById("add-link-modal").close();
-  toast(`Imported ${saved} of ${urls.length} links`);
-  if (document.getElementById("links-container")) {
-    await Promise.all([loadLinks(), loadSidebarCats(), updateCounts()]);
-  }
-}
-
-function renderAddLinkTags() {
-  const el = document.getElementById("add-link-tag-list");
-  if (!el) return;
-  el.innerHTML = _addLinkTags.map((t, i) => `
-    <span class="edit-tag-chip" style="border:1px solid color-mix(in srgb,${escHtml(t.color)} 45%,transparent);color:${escHtml(t.color)}">
-      ${escHtml(t.name)}
-      <button type="button" onclick="removeAddLinkTag(${i})" aria-label="Remove">×</button>
-    </span>
-  `).join("");
-}
-
-function handleAddLinkTagSelect(sel) {
-  const val = sel.value;
-  if (!val) return;
-  if (val === "__new__") {
-    document.getElementById("add-link-new-tag-row").style.display = "flex";
-    setTimeout(() => document.getElementById("add-link-new-tag").focus(), 50);
-    sel.value = "";
-    return;
-  }
-  const opt = sel.options[sel.selectedIndex];
-  const color = opt.dataset.color || "#6366f1";
-  if (!_addLinkTags.find(t => t.name === val)) {
-    _addLinkTags.push({ name: val, color });
-    renderAddLinkTags();
-  }
-  opt.remove();
-  sel.value = "";
-}
-
-function addNewLinkTags() {
-  const input = document.getElementById("add-link-new-tag");
-  const names = input.value.split(",").map(s => s.trim()).filter(Boolean);
-  names.forEach(name => {
-    if (!_addLinkTags.find(t => t.name === name)) {
-      _addLinkTags.push({ name, color: "#6366f1" });
-    }
-  });
-  input.value = "";
-  document.getElementById("add-link-new-tag-row").style.display = "none";
-  renderAddLinkTags();
-}
-
-function removeAddLinkTag(i) {
-  _addLinkTags.splice(i, 1);
-  renderAddLinkTags();
-}
-
-async function submitAddLink(e) {
-  e.preventDefault();
-  const url = document.getElementById("add-link-url").value.trim();
-  const res = await fetch("/api/links", {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify({ url, tags: _addLinkTags.map(t => t.name) }),
-  });
-  if (res.ok) {
-    document.getElementById("add-link-modal").close();
-    toast("Link saved!");
-    if (document.getElementById("links-container")) {
-      await Promise.all([loadLinks(), loadSidebarCats(), updateCounts()]);
-    } else {
-      setTimeout(() => window.location.href = "/", 400);
-    }
-  }
-}
-
 /* ── Quick add (from share sheet) ────────────────────────── */
-let _quickAddTags = []; // [{name, color}]
 let _quickAddUrl = "";
 let _quickAddTitle = "";
 
 async function openQuickAdd(url) {
-  _quickAddTags = [];
   _quickAddUrl = url;
   _quickAddTitle = "";
-  renderQuickAddTags();
   document.getElementById("quick-add-note").value = "";
-  document.getElementById("quick-add-new-tag-row").style.display = "none";
-  document.getElementById("quick-add-new-tag").value = "";
   document.getElementById("quick-add-form").style.display = "none";
   document.getElementById("quick-add-loading").style.display = "";
   document.getElementById("quick-add-modal").showModal();
@@ -768,7 +606,7 @@ async function openQuickAdd(url) {
     fetch("/api/tags", { headers: headers() }),
   ]);
   const meta = metaRes.ok ? await metaRes.json() : {};
-  const allTags = tagsRes.ok ? await tagsRes.json() : [];
+  if (tagsRes.ok && !_sidebarTags.length) _sidebarTags = await tagsRes.json();
 
   _quickAddTitle = meta.title || "";
   document.getElementById("quick-add-favicon").src = meta.favicon_url || "";
@@ -776,66 +614,16 @@ async function openQuickAdd(url) {
   document.getElementById("quick-add-desc").textContent = meta.description || "";
   document.getElementById("quick-add-desc").style.display = meta.description ? "" : "none";
   document.getElementById("quick-add-url").textContent = url;
-
-  const sel = document.getElementById("quick-add-tag-select");
-  sel.innerHTML = '<option value="">— Add tag —</option><option value="__new__">＋ Add new tag</option>';
-  allTags.forEach(t => {
-    const opt = document.createElement("option");
-    opt.value = t.name;
-    opt.dataset.color = t.color;
-    opt.textContent = t.name;
-    sel.appendChild(opt);
-  });
+  fillCategorySelect(document.getElementById("quick-add-category"), "");
 
   document.getElementById("quick-add-loading").style.display = "none";
   document.getElementById("quick-add-form").style.display = "flex";
 }
 
-function renderQuickAddTags() {
-  const el = document.getElementById("quick-add-tag-list");
-  el.innerHTML = _quickAddTags.map((t, i) => `
-    <span class="edit-tag-chip" style="border:1px solid color-mix(in srgb,${escHtml(t.color)} 45%,transparent);color:${escHtml(t.color)}">
-      ${escHtml(t.name)}
-      <button type="button" onclick="removeQuickAddTag(${i})" aria-label="Remove">×</button>
-    </span>
-  `).join("");
-}
-
-function handleQuickAddTagSelect(sel) {
-  const val = sel.value;
-  if (!val) return;
-  if (val === "__new__") {
-    document.getElementById("quick-add-new-tag-row").style.display = "flex";
-    setTimeout(() => document.getElementById("quick-add-new-tag").focus(), 50);
-    sel.value = "";
-    return;
-  }
-  const opt = sel.options[sel.selectedIndex];
-  const color = opt.dataset.color || "#6366f1";
-  if (!_quickAddTags.find(t => t.name === val)) {
-    _quickAddTags.push({ name: val, color });
-    renderQuickAddTags();
-  }
-  opt.remove();
-  sel.value = "";
-}
-
-function addNewQuickAddTags() {
-  const input = document.getElementById("quick-add-new-tag");
-  const names = input.value.split(",").map(s => s.trim()).filter(Boolean);
-  names.forEach(name => {
-    if (!_quickAddTags.find(t => t.name === name)) {
-      _quickAddTags.push({ name, color: "#6366f1" });
-    }
-  });
-  input.value = "";
-  document.getElementById("quick-add-new-tag-row").style.display = "none";
-  renderQuickAddTags();
-}
-
-function removeQuickAddTag(i) {
-  _quickAddTags.splice(i, 1);
-  renderQuickAddTags();
+function quickAddCategory() {
+  const id = document.getElementById("quick-add-category").value;
+  const cat = _sidebarTags.find(t => String(t.id) === String(id));
+  return cat ? [cat.name] : [];
 }
 
 async function submitQuickAdd(e) {
@@ -847,7 +635,7 @@ async function submitQuickAdd(e) {
   const res = await fetch("/api/links", {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ url: _quickAddUrl, tags: _quickAddTags.map(t => t.name) }),
+    body: JSON.stringify({ url: _quickAddUrl, tags: quickAddCategory() }),
   });
 
   if (res.ok) {
@@ -895,201 +683,58 @@ async function openNoteForLink(linkId, noteId) {
 }
 
 /* ── Edit modal ──────────────────────────────────────────── */
-let _editTags = []; // [{name, color}]
+// every category picker is a plain single select now
+function fillCategorySelect(el, selectedId) {
+  if (!el) return;
+  el.innerHTML = `<option value="">No category</option>` +
+    _sidebarTags.map(t =>
+      `<option value="${t.id}" ${String(t.id) === String(selectedId) ? "selected" : ""}>${escHtml(t.name)}</option>`
+    ).join("");
+}
+
 let _allTags  = []; // [{id, name, color}] from server
 
 async function editLink(id) {
-  const [linkRes, tagsRes] = await Promise.all([
-    fetch(`/api/links/${id}`, { headers: headers() }),
-    fetch("/api/tags", { headers: headers() }),
-  ]);
-  if (!linkRes.ok) return;
-  const link = await linkRes.json();
-  _allTags = tagsRes.ok ? await tagsRes.json() : [];
+  const res = await fetch(`/api/links/${id}`, { headers: headers() });
+  if (!res.ok) return;
+  const link = await res.json();
 
-  _editTags = link.tags.map(t => ({ name: t.name, color: t.color }));
   document.getElementById("edit-link-id").value = id;
   document.getElementById("edit-title").value = link.title || "";
   document.getElementById("edit-url").value = link.url || "";
+  document.getElementById("edit-desc").value = link.description || "";
+  fillCategorySelect(document.getElementById("edit-category"), link.tags[0]?.id);
 
-  // Populate dropdown
-  const sel = document.getElementById("edit-tag-select");
-  sel.innerHTML = '<option value="">— Add tag —</option><option value="__new__">＋ Add new tag</option>';
-  _allTags.forEach(t => {
-    if (!_editTags.find(e => e.name === t.name)) {
-      const opt = document.createElement("option");
-      opt.value = t.name;
-      opt.dataset.color = t.color;
-      opt.textContent = t.name;
-      sel.appendChild(opt);
-    }
-  });
-
-  document.getElementById("edit-new-tag-row").style.display = "none";
-  document.getElementById("edit-new-tag").value = "";
-  renderEditTags();
   document.getElementById("edit-modal").showModal();
   setTimeout(() => document.getElementById("edit-title").focus(), 50);
-}
-
-function renderEditTags() {
-  const el = document.getElementById("edit-tag-list");
-  if (!el) return;
-  el.innerHTML = _editTags.map((t, i) => `
-    <span class="edit-tag-chip" style="border:1px solid color-mix(in srgb,${escHtml(t.color)} 45%,transparent);color:${escHtml(t.color)}">
-      ${escHtml(t.name)}
-      <button type="button" onclick="removeEditTag(${i})" aria-label="Remove">×</button>
-    </span>
-  `).join("");
-}
-
-function handleTagSelect(sel) {
-  const val = sel.value;
-  if (!val) return;
-  if (val === "__new__") {
-    document.getElementById("edit-new-tag-row").style.display = "flex";
-    setTimeout(() => document.getElementById("edit-new-tag").focus(), 50);
-    sel.value = "";
-    return;
-  }
-  const opt = sel.options[sel.selectedIndex];
-  const color = opt.dataset.color || "#6366f1";
-  if (!_editTags.find(t => t.name === val)) {
-    _editTags.push({ name: val, color });
-    renderEditTags();
-  }
-  // Remove from dropdown
-  opt.remove();
-  sel.value = "";
-}
-
-function addNewEditTags() {
-  const input = document.getElementById("edit-new-tag");
-  const names = input.value.split(",").map(s => s.trim()).filter(Boolean);
-  names.forEach(name => {
-    if (!_editTags.find(t => t.name === name)) {
-      const existing = _allTags.find(t => t.name === name);
-      _editTags.push({ name, color: existing?.color || "#6366f1" });
-    }
-  });
-  input.value = "";
-  document.getElementById("edit-new-tag-row").style.display = "none";
-  renderEditTags();
-}
-
-function removeEditTag(i) {
-  const removed = _editTags.splice(i, 1)[0];
-  renderEditTags();
-  // Add back to dropdown if it was an existing tag
-  const existing = _allTags.find(t => t.name === removed.name);
-  if (existing) {
-    const sel = document.getElementById("edit-tag-select");
-    const opt = document.createElement("option");
-    opt.value = existing.name;
-    opt.dataset.color = existing.color;
-    opt.textContent = existing.name;
-    sel.appendChild(opt);
-  }
-}
-
-function renderImportTags() {
-  const el = document.getElementById("import-tag-list");
-  if (!el) return;
-  el.innerHTML = _importTags.map((t, i) => `
-    <span class="edit-tag-chip" style="border:1px solid color-mix(in srgb,${escHtml(t.color)} 45%,transparent);color:${escHtml(t.color)}">
-      ${escHtml(t.name)}
-      <button type="button" onclick="removeImportTag(${i})" aria-label="Remove">×</button>
-    </span>
-  `).join("");
-}
-
-function handleImportTagSelect(sel) {
-  const val = sel.value;
-  if (!val) return;
-  if (val === "__new__") {
-    document.getElementById("import-new-tag-row").style.display = "flex";
-    setTimeout(() => document.getElementById("import-new-tag").focus(), 50);
-    sel.value = "";
-    return;
-  }
-  const opt = sel.options[sel.selectedIndex];
-  const color = opt.dataset.color || "#6366f1";
-  if (!_importTags.find(t => t.name === val)) {
-    _importTags.push({ name: val, color });
-    renderImportTags();
-  }
-  opt.remove();
-  sel.value = "";
-}
-
-function addNewImportTags() {
-  const input = document.getElementById("import-new-tag");
-  const names = input.value.split(",").map(s => s.trim()).filter(Boolean);
-  names.forEach(name => {
-    if (!_importTags.find(t => t.name === name)) {
-      const existing = _allTags.find(t => t.name === name);
-      _importTags.push({ name, color: existing?.color || "#6366f1" });
-    }
-  });
-  input.value = "";
-  document.getElementById("import-new-tag-row").style.display = "none";
-  renderImportTags();
-}
-
-function removeImportTag(i) {
-  const removed = _importTags.splice(i, 1)[0];
-  renderImportTags();
-  const existing = _allTags.find(t => t.name === removed.name);
-  if (existing) {
-    const sel = document.getElementById("import-tag-select");
-    const opt = document.createElement("option");
-    opt.value = existing.name;
-    opt.dataset.color = existing.color;
-    opt.textContent = existing.name;
-    sel.appendChild(opt);
-  }
-}
-
-function handleTagKey(e) {
-  if (e.key === "Enter") { e.preventDefault(); addNewEditTags(); }
-}
-
-async function refreshLinkMetadata() {
-  const id = document.getElementById("edit-link-id").value;
-  if (!id) return;
-  const btn = document.getElementById("edit-refresh-btn");
-  btn.disabled = true;
-  btn.innerHTML = '<i data-lucide="refresh-cw"></i> Refreshing…';
-  lucide.createIcons();
-  await fetch(`/api/links/${id}/refresh`, { method: "POST", headers: headers() });
-  const link = await fetch(`/api/links/${id}`, { headers: headers() }).then(r => r.json());
-  document.getElementById("edit-title").value = link.title || "";
-  btn.disabled = false;
-  btn.innerHTML = '<i data-lucide="refresh-cw"></i> Refresh metadata';
-  lucide.createIcons();
-  toast("Metadata refreshed");
 }
 
 async function saveLink(e) {
   e.preventDefault();
   const id = document.getElementById("edit-link-id").value;
-  const title = document.getElementById("edit-title").value.trim();
-  const url = document.getElementById("edit-url").value.trim();
+  const catId = document.getElementById("edit-category").value;
+  const cat = _sidebarTags.find(t => String(t.id) === String(catId));
   const res = await fetch(`/api/links/${id}`, {
     method: "PATCH",
     headers: headers(),
-    body: JSON.stringify({ title, url, tags: _editTags.map(t => t.name) }),
+    body: JSON.stringify({
+      title: document.getElementById("edit-title").value.trim(),
+      url: document.getElementById("edit-url").value.trim(),
+      description: document.getElementById("edit-desc").value.trim(),
+      tags: cat ? [cat.name] : [],
+    }),
   });
   if (res.ok) {
     document.getElementById("edit-modal").close();
-    await loadLinks();
-    loadSidebarCats();
-    updateCounts();
+    await loadSidebarCats();
+    if (typeof loadLinks === "function") await loadLinks();
+    if (VIEW.ct) renderContentTypeView(VIEW.ct);
     toast("Link updated");
   }
 }
 
 /* ── Add link panel ──────────────────────────────────────── */
+let _addMode = "one";        // "one" | "many"
 let _addPanelMeta = {};      // favicon from the preview, carried to the save
 let _addPreviewSeq = 0;      // ignore previews that resolve out of order
 
@@ -1113,6 +758,17 @@ function closeAddPanel() {
   document.getElementById("add-panel-form").reset();
   document.getElementById("add-panel-status").textContent = "";
   _addPanelMeta = {};
+  setAddMode("one");
+}
+
+function setAddMode(mode) {
+  const panel = document.getElementById("add-panel");
+  if (!panel) return;
+  _addMode = mode;
+  panel.querySelectorAll(".add-mode .toggle-btn").forEach(b =>
+    b.classList.toggle("active", b.dataset.mode === mode));
+  document.getElementById("add-mode-one").style.display = mode === "one" ? "" : "none";
+  document.getElementById("add-mode-many").style.display = mode === "many" ? "" : "none";
 }
 
 async function previewAddPanelUrl() {
@@ -1140,41 +796,46 @@ async function previewAddPanelUrl() {
 async function submitAddPanel(ev) {
   ev.preventDefault();
   const btn = document.getElementById("add-panel-save");
-  const url = document.getElementById("add-panel-url").value.trim();
   const tagId = document.getElementById("add-panel-category").value;
   const tag = _sidebarTags.find(t => String(t.id) === String(tagId));
-  if (!url) return;
+  const category = tag ? [tag.name] : [];
+
+  const urls = _addMode === "many"
+    ? document.getElementById("add-panel-bulk").value.split(/[\n,]+/).map(u => u.trim()).filter(Boolean)
+    : [document.getElementById("add-panel-url").value.trim()].filter(Boolean);
+  if (!urls.length) return;
 
   btn.disabled = true;
-  const res = await fetch("/api/links", {
-    method: "POST",
-    headers: headers(),
-    body: JSON.stringify({
-      url,
+  btn.textContent = urls.length > 1 ? "Saving…" : "Save";
+  let saved = 0, dupes = 0;
+
+  for (const url of urls) {
+    // only the single-link form has title/description to send
+    const extra = _addMode === "one" ? {
       title: document.getElementById("add-panel-title").value.trim(),
       description: document.getElementById("add-panel-desc").value.trim(),
       favicon_url: _addPanelMeta.favicon_url || "",
-      tags: tag ? [tag.name] : [],
-    }),
-  });
-  btn.disabled = false;
+    } : {};
+    const res = await fetch("/api/links", {
+      method: "POST", headers: headers(),
+      body: JSON.stringify({ url, tags: category, ...extra }),
+    });
+    if (res.ok) {
+      const body = await res.json();
+      body.duplicate ? dupes++ : saved++;
+    }
+  }
 
-  if (!res.ok) { toast("Could not save that link"); return; }
-  const body = await res.json();
+  btn.disabled = false;
+  btn.textContent = "Save";
   closeAddPanel();
-  toast(body.duplicate ? "Already saved" : "Link saved");
+  if (urls.length === 1) toast(dupes ? "Already saved" : "Link saved");
+  else toast(`Saved ${saved} of ${urls.length}${dupes ? ` · ${dupes} already there` : ""}`);
+
   await loadSidebarCats();
   if (typeof loadLinks === "function") await loadLinks();
-  const ctId = new URLSearchParams(location.search).get("ct");
-  if (ctId) renderContentTypeView(ctId);
+  if (VIEW.ct) renderContentTypeView(VIEW.ct);
   else window.showCategoryOverview?.();
-}
-
-// the bulk paste form lives in the add-link modal, which the panel now fronts
-async function openBulkImport() {
-  closeAddPanel();
-  await openAddLink();
-  switchAddTab("import");
 }
 
 function initAddPanel() {
@@ -1192,6 +853,8 @@ function initAddPanel() {
   document.addEventListener("keydown", ev => {
     if (ev.key === "Escape" && panel.classList.contains("open")) closeAddPanel();
   });
+  panel.querySelectorAll(".add-mode .toggle-btn").forEach(b =>
+    b.addEventListener("click", () => setAddMode(b.dataset.mode)));
   const url = document.getElementById("add-panel-url");
   url.addEventListener("change", previewAddPanelUrl);
   url.addEventListener("paste", () => setTimeout(previewAddPanelUrl, 0));
@@ -1481,9 +1144,6 @@ function renderContentTypes(ul, meta) {
       goContentType(a.dataset.ct);
     });
   });
-  ul.querySelectorAll(".row-overflow").forEach(btn => {
-    btn.addEventListener("click", () => toggleRowMenu(btn));
-  });
   ul.querySelectorAll("[data-note-action]").forEach(btn => {
     btn.addEventListener("click", () => {
       closeRowMenus();
@@ -1643,16 +1303,16 @@ function noteRow(note) {
 }
 
 let _ctData = null;                                  // the fetched bucket, unfiltered
-let _ctFilter = { site: "", from: "", to: "" };
+let _ctFilter = { sites: [], from: "", to: "" };
 
 function ctFilterCount() {
-  return [_ctFilter.site, _ctFilter.from, _ctFilter.to].filter(Boolean).length;
+  return (_ctFilter.sites.length ? 1 : 0) + [_ctFilter.from, _ctFilter.to].filter(Boolean).length;
 }
 
 function filteredCtLinks() {
   const links = (_ctData && _ctData.links) || [];
   return links.filter(l => {
-    if (_ctFilter.site && getDomain(l.url) !== _ctFilter.site) return false;
+    if (_ctFilter.sites.length && !_ctFilter.sites.includes(getDomain(l.url))) return false;
     // created_at is "YYYY-MM-DD HH:MM:SS", so a plain string compare on the date works
     const day = (l.created_at || "").slice(0, 10);
     if (_ctFilter.from && day < _ctFilter.from) return false;
@@ -1676,16 +1336,19 @@ function ctFilterPanel() {
         <i data-lucide="list-filter"></i> Filter${n ? ` · ${n}` : ""}
       </button>
       <div class="filter-panel" id="ct-filter-panel">
-        <label class="add-field">
-          <span>Website</span>
-          <select id="filter-site" class="edit-tag-select">
-            <option value="">All websites</option>
+        <div class="add-field">
+          <span>Websites</span>
+          <div class="filter-sites">
             ${sites.map(d => `
-              <option value="${escHtml(d)}" ${_ctFilter.site === d ? "selected" : ""}>
-                ${escHtml(d)} (${counts[d]})
-              </option>`).join("")}
-          </select>
-        </label>
+              <label class="filter-site-row">
+                <input type="checkbox" class="filter-site" value="${escHtml(d)}"
+                       ${_ctFilter.sites.includes(d) ? "checked" : ""}>
+                <span>${escHtml(d)}</span>
+                <span class="filter-site-count">${counts[d]}</span>
+              </label>`).join("")}
+          </div>
+          <p class="form-note">None ticked means every website.</p>
+        </div>
         <div class="filter-dates">
           <label class="add-field">
             <span>Saved from</span>
@@ -1719,7 +1382,7 @@ function bindCtFilter(pane, ctId) {
 
   pane.querySelector("#filter-apply").addEventListener("click", () => {
     _ctFilter = {
-      site: pane.querySelector("#filter-site").value,
+      sites: [...pane.querySelectorAll(".filter-site:checked")].map(c => c.value),
       from: pane.querySelector("#filter-from").value,
       to: pane.querySelector("#filter-to").value,
     };
@@ -1727,7 +1390,7 @@ function bindCtFilter(pane, ctId) {
     renderCtPane(ctId);
   });
   pane.querySelector("#filter-clear").addEventListener("click", () => {
-    _ctFilter = { site: "", from: "", to: "" };
+    _ctFilter = { sites: [], from: "", to: "" };
     close();
     renderCtPane(ctId);
   });
@@ -1744,7 +1407,6 @@ function renderCtPane(ctId) {
   const head = `
     <div class="ct-head">
       <h1>${escHtml(ct.title)}</h1>
-      <span class="ct-kind">${KIND_LABEL[kind] || kind}</span>
       ${kind === "links" ? ctFilterPanel() : ""}
     </div>`;
 
@@ -1773,7 +1435,7 @@ async function renderContentTypeView(ctId) {
   const res = await fetch(`/api/content-types/${ctId}/items`, { headers: headers() });
   if (!res.ok) { pane.innerHTML = '<div class="empty-state">Not found.</div>'; return; }
   _ctData = await res.json();
-  _ctFilter = { site: "", from: "", to: "" };   // a fresh bucket starts unfiltered
+  _ctFilter = { sites: [], from: "", to: "" };   // a fresh bucket starts unfiltered
   renderCtPane(ctId);
 }
 

@@ -400,7 +400,7 @@ async def create_link(
             "INSERT INTO links(id, url, title, description, favicon_url) VALUES (?,?,?,?,?)",
             (link_id, url, title, description, favicon_url)
         )
-        for tag_name in tags:
+        for tag_name in tags[:1]:
             color = _next_color(conn)
             conn.execute("INSERT OR IGNORE INTO tags(name, color) VALUES (?,?)", (tag_name, color))
             tag_row = conn.execute("SELECT id FROM tags WHERE name=?", (tag_name,)).fetchone()
@@ -428,7 +428,18 @@ def _default_content_type(conn, tag_id: int, kind: str = "links") -> int:
     return cur.lastrowid
 
 
+def _clear_link_tags(conn, link_id: str):
+    """Drop membership of every links-kind content type."""
+    conn.execute(
+        "DELETE FROM link_content_types WHERE link_id=? AND content_type_id IN "
+        "(SELECT id FROM content_types WHERE kind='links')",
+        (link_id,),
+    )
+
+
 def _link_tag_write(conn, link_id: str, tag_id: int):
+    """A link belongs to exactly one category, so this replaces rather than adds."""
+    _clear_link_tags(conn, link_id)
     conn.execute(
         "INSERT OR IGNORE INTO link_content_types(link_id, content_type_id) VALUES (?,?)",
         (link_id, _default_content_type(conn, tag_id)),
@@ -448,15 +459,6 @@ def _file_note(conn, note_id: str, tag_id: int | None):
             "INSERT OR IGNORE INTO note_content_types(note_id, content_type_id) VALUES (?,?)",
             (note_id, _default_content_type(conn, tag_id, "notes")),
         )
-
-
-def _clear_link_tags(conn, link_id: str):
-    """Drop membership of every links-kind content type."""
-    conn.execute(
-        "DELETE FROM link_content_types WHERE link_id=? AND content_type_id IN "
-        "(SELECT id FROM content_types WHERE kind='links')",
-        (link_id,),
-    )
 
 
 def _link_rows(conn, rows):
@@ -591,7 +593,7 @@ def update_link(
             conn.execute("UPDATE links SET url=? WHERE id=?", (body.url.strip(), link_id))
         if body.tags is not None:
             _clear_link_tags(conn, link_id)
-            for tag_name in body.tags:
+            for tag_name in body.tags[:1]:
                 tag_name = tag_name.strip()
                 if not tag_name:
                     continue

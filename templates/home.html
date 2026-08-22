@@ -56,6 +56,7 @@
         <div class="notes-editor-scroll" id="note-editor-view" style="display:none">
           <span class="notes-save-status" id="notes-save-status"></span>
           <input type="text" id="note-title-input" class="note-title-input" placeholder="Untitled" autocomplete="off">
+          <div class="note-created" id="note-created"></div>
           <div id="note-editor" class="note-editor"></div>
         </div>
 
@@ -96,16 +97,12 @@
         <input type="url" id="edit-url" placeholder="https://…" required autocomplete="off">
       </div>
       <div class="form-group">
-        <label>Tags</label>
-        <div id="edit-tag-list" class="edit-tag-list"></div>
-        <select id="edit-tag-select" class="edit-tag-select" onchange="handleTagSelect(this)">
-          <option value="">— Add tag —</option>
-          <option value="__new__">＋ Add new tag</option>
-        </select>
-        <div id="edit-new-tag-row" class="edit-tag-add" style="display:none">
-          <input type="text" id="edit-new-tag" placeholder="New tags, comma-separated" autocomplete="off" onkeydown="handleTagKey(event)">
-          <button type="button" onclick="addNewEditTags()">Add</button>
-        </div>
+        <label for="edit-desc">Description</label>
+        <textarea id="edit-desc" class="import-textarea" rows="3" placeholder="What is this about?"></textarea>
+      </div>
+      <div class="form-group">
+        <label for="edit-category">Category</label>
+        <select id="edit-category" class="edit-tag-select"></select>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn-ghost" onclick="document.getElementById('edit-modal').close()">Cancel</button>
@@ -138,5 +135,5 @@
 </dialog>
 {% endblock %}
 {% block scripts %}
-<script type="module" src="/static/notes.js?v=071"></script>
+<script type="module" src="/static/notes.js?v=072"></script>
 {% endblock %}
