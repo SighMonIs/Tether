@@ -25,10 +25,8 @@ const listEl = document.getElementById("notes-list");
 const titleInput = document.getElementById("note-title-input");
 const editorMount = document.getElementById("note-editor");
 const statusEl = document.getElementById("notes-save-status");
-const toolbarEl = document.getElementById("notes-toolbar");
 const bubbleEl = document.getElementById("bubble-toolbar");
 const linkBarEl = document.getElementById("link-toolbar");
-const categoryBtn = document.getElementById("note-category-btn");
 const categoryModal = document.getElementById("note-category-modal");
 const categorySelect = document.getElementById("note-category-select");
 const categoryForm = document.getElementById("note-category-form");
@@ -37,12 +35,9 @@ const urlParams = new URLSearchParams(location.search);
 
 const overviewView = document.getElementById("overview-view");
 const ctView = document.getElementById("ct-view");
-const backBtn = document.getElementById("note-back-btn");
 const notesListView = document.getElementById("notes-list-view");
 const noteView = document.getElementById("note-editor-view");
 const linksView = document.getElementById("links-view");
-
-const toolbarHidden = localStorage.getItem("notesToolbarHidden") === "1";
 
 let currentView = "all";  // "all" | "links" | "notes" | "ct" | "editor"
 let currentCtId = new URLSearchParams(location.search).get("ct");
@@ -59,7 +54,6 @@ if (searchInput) {
 function setView(v, persist = true) {
   currentView = v;
   const editing = v === "editor";
-  toolbarEl.style.display = (editing && !toolbarHidden) ? "" : "none";
   noteView.style.display = editing ? "" : "none";
   overviewView.style.display = v === "all" ? "" : "none";
   if (ctView) ctView.style.display = v === "ct" ? "" : "none";
@@ -74,7 +68,6 @@ function setView(v, persist = true) {
   if (v === "ct") window.renderContentTypeView?.(currentCtId);
 }
 
-backBtn.addEventListener("click", () => { saveCurrentNote(); setView("notes"); });
 // app.js still calls this after a quick-add save
 window.setShowingLinks = on => setView(on ? "links" : "notes");
 
@@ -166,7 +159,7 @@ const ACTIVE_CHECKS = {
 };
 
 function updateToolbarState() {
-  const bars = [toolbarEl, bubbleEl].filter(Boolean);
+  const bars = [bubbleEl].filter(Boolean);
   for (const bar of bars) {
     bar.querySelectorAll("[data-cmd]").forEach(btn => {
       const check = ACTIVE_CHECKS[btn.dataset.cmd];
@@ -289,12 +282,6 @@ function initBubbleToolbar() {
 initBubbleToolbar();
 initLinkBar();
 
-toolbarEl.addEventListener("click", e => {
-  const btn = e.target.closest("[data-cmd]");
-  if (!btn || !currentNoteId) return;
-  COMMANDS[btn.dataset.cmd]?.(editor);
-});
-
 titleInput.addEventListener("input", () => scheduleSave());
 
 let categoryModalNoteId = null;
@@ -306,10 +293,10 @@ function openCategoryModal(noteId) {
   categoryModal.showModal();
 }
 
-categoryBtn.addEventListener("click", () => {
-  if (!currentNoteId) return;
-  openCategoryModal(currentNoteId);
-});
+// the sidebar's per-note menu drives these
+window.createNoteInCategory = () => createNote();
+window.openNoteCategory = noteId => openCategoryModal(noteId);
+window.deleteNoteById = noteId => deleteNote(noteId);
 
 categoryForm.addEventListener("submit", async e => {
   e.preventDefault();

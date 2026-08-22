@@ -1402,6 +1402,19 @@ function renderContentTypes(ul, meta) {
             <i data-lucide="${n.link_id ? "link" : "file-text"}"></i>
             <span class="sidebar-cat-name">${escHtml(n.title || "Untitled")}</span>
           </button>
+      <div class="row-menu-wrap">
+        <button class="row-overflow" type="button" title="More">
+          <i data-lucide="ellipsis-vertical"></i>
+        </button>
+        <div class="row-menu">
+          <button type="button" class="row-menu-item" data-note-action="category" data-id="${n.id}">
+            <i data-lucide="tag"></i> Change category
+          </button>
+          <button type="button" class="row-menu-item danger" data-note-action="delete" data-id="${n.id}">
+            <i data-lucide="trash-2"></i> Delete
+          </button>
+        </div>
+      </div>
         </li>`).join("")
       : `<li class="sidebar-empty">No notes yet.</li>`);
   }
@@ -1426,6 +1439,19 @@ function renderContentTypes(ul, meta) {
                 <i data-lucide="${n.link_id ? "link" : "file-text"}"></i>
                 <span class="sidebar-cat-name">${escHtml(n.title || "Untitled")}</span>
               </button>
+              <div class="row-menu-wrap">
+                <button class="row-overflow" type="button" title="More">
+                  <i data-lucide="ellipsis-vertical"></i>
+                </button>
+                <div class="row-menu">
+                  <button type="button" class="row-menu-item" data-note-action="category" data-id="${n.id}">
+                    <i data-lucide="tag"></i> Change category
+                  </button>
+                  <button type="button" class="row-menu-item danger" data-note-action="delete" data-id="${n.id}">
+                    <i data-lucide="trash-2"></i> Delete
+                  </button>
+                </div>
+              </div>
             </li>`);
         }
       }
@@ -1473,6 +1499,16 @@ function renderContentTypes(ul, meta) {
     a.addEventListener("click", ev => {
       ev.preventDefault();
       goContentType(a.dataset.ct);
+    });
+  });
+  ul.querySelectorAll(".row-overflow").forEach(btn => {
+    btn.addEventListener("click", () => toggleRowMenu(btn));
+  });
+  ul.querySelectorAll("[data-note-action]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      closeRowMenus();
+      if (btn.dataset.noteAction === "category") window.openNoteCategory?.(btn.dataset.id);
+      else window.deleteNoteById?.(btn.dataset.id);
     });
   });
 }
@@ -1636,7 +1672,7 @@ function initSidebarBack() {
     });
   }
   const newContent = document.getElementById("sidebar-new-content");
-  if (newContent) newContent.addEventListener("click", () => openContentTypeModal(null));
+  if (newContent) newContent.addEventListener("click", () => window.createNoteInCategory?.());
 
   const title = document.getElementById("sidebar-cat-title");
   if (title) {
@@ -1737,16 +1773,6 @@ function initSettingsTabs() {
   });
 }
 
-/* ── Notes toolbar setting ───────────────────────────────── */
-function toggleNotesToolbarSetting(show) {
-  localStorage.setItem("notesToolbarHidden", show ? "" : "1");
-}
-
-function initNotesToolbarToggle() {
-  const checkbox = document.getElementById("notes-toolbar-toggle");
-  if (checkbox) checkbox.checked = localStorage.getItem("notesToolbarHidden") !== "1";
-}
-
 /* ── Init ────────────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
   lucide.createIcons();
@@ -1791,5 +1817,4 @@ document.addEventListener("DOMContentLoaded", () => {
   }
   loadErrorLog();
   initSettingsTabs();
-  initNotesToolbarToggle();
 });

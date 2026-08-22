@@ -5,20 +5,6 @@
 <div class="feed">
   <div class="feed-card notes-card">
     <div class="notes-editor-pane" id="notes-editor-pane">
-        <div class="content-toolbar notes-toolbar" id="notes-toolbar" style="display:none">
-          <div class="view-toggle">
-            <button class="toggle-btn" id="note-back-btn" title="Back to notes"><i data-lucide="arrow-left"></i></button>
-          </div>
-          <div class="view-toggle">
-            <button class="toggle-btn" data-cmd="undo" title="Undo"><i data-lucide="undo-2"></i></button>
-            <button class="toggle-btn" data-cmd="redo" title="Redo"><i data-lucide="redo-2"></i></button>
-          </div>
-          <div class="view-toggle">
-            <button class="toggle-btn" id="note-category-btn" title="Change category"><i data-lucide="settings"></i></button>
-          </div>
-          <span class="notes-save-status" id="notes-save-status"></span>
-        </div>
-
         <!-- shown when the caret sits inside a link -->
         <div class="link-toolbar" id="link-toolbar">
           <span class="link-bar-url" id="link-bar-url"></span>
@@ -68,6 +54,7 @@
         </div>
 
         <div class="notes-editor-scroll" id="note-editor-view" style="display:none">
+          <span class="notes-save-status" id="notes-save-status"></span>
           <input type="text" id="note-title-input" class="note-title-input" placeholder="Untitled" autocomplete="off">
           <div id="note-editor" class="note-editor"></div>
         </div>
@@ -176,5 +163,5 @@
 </dialog>
 {% endblock %}
 {% block scripts %}
-<script type="module" src="/static/notes.js?v=065"></script>
+<script type="module" src="/static/notes.js?v=066"></script>
 {% endblock %}

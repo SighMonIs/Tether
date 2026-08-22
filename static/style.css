@@ -676,12 +676,12 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
   flex-direction: column;
 }
 
-.notes-toolbar { position: relative; }
 .notes-save-status {
-  margin-left: auto;
-  font-size: 0.75rem;
+  display: block;
+  text-align: right;
+  height: 14px;
+  font-size: 11.5px;
   color: var(--subtext);
-  flex-shrink: 0;
 }
 
 .notes-editor-scroll {
@@ -881,15 +881,6 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
   margin: 2px 3px;
   background: var(--border);
 }
-
-/* one line tall: the toolbar scrolls sideways instead of wrapping */
-.notes-toolbar {
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.notes-toolbar::-webkit-scrollbar { display: none; }
-.notes-toolbar .view-toggle { flex: none; }
 
 /* ── Content type view ───────────────────────────────────── */
 .ct-pane {
