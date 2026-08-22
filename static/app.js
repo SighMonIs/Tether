@@ -1213,6 +1213,7 @@ const KIND_ICON = { links: "link", notes: "file-text" };
 const KIND_LABEL = { links: "Links", notes: "Notes" };
 let _contentTypes = [];   // for the category currently drilled into
 let _ctNotes = {};        // notes keyed by their notes-kind content type id
+let _openNoteId = null;   // the note in the editor wins over the URL's highlight
 
 function folderSvg(color) {
   return `<svg class="sidebar-cat-folder" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
@@ -1248,7 +1249,7 @@ function renderSidebar(slide) {
     if (back) back.style.display = "";
     if (title) {
       // the category itself is the default view — what "All" used to be
-      const onOverview = !new URLSearchParams(location.search).get("ct");
+      const onOverview = !new URLSearchParams(location.search).get("ct") && !_openNoteId;
       title.style.display = "";
       title.href = `/?${drillQuery(_drillId)}&type=all`;
       title.classList.toggle("active", onOverview);
@@ -1380,8 +1381,8 @@ function renderContentTypes(ul, meta) {
     rows.push(notes.length
       ? notes.map(n => `
         <li data-order="${n.id}">
-          <button type="button" class="sidebar-cat-link ct-note" data-note="${n.id}"
-                  title="${n.link_id ? "Note on a saved link" : ""}">
+          <button type="button" class="sidebar-cat-link ct-note ${_openNoteId === n.id ? "active" : ""}"
+                  data-note="${n.id}" title="${n.link_id ? "Note on a saved link" : ""}">
             <i data-lucide="${n.link_id ? "link" : "file-text"}"></i>
             <span class="sidebar-cat-name">${escHtml(n.title || "Untitled")}</span>
           </button>
@@ -1416,8 +1417,8 @@ function renderContentTypes(ul, meta) {
         for (const n of notes) {
           rows.push(`
             <li data-order="${n.id}">
-              <button type="button" class="sidebar-cat-link ct-note" data-note="${n.id}"
-                      title="${n.link_id ? "Note on a saved link" : ""}">
+              <button type="button" class="sidebar-cat-link ct-note ${_openNoteId === n.id ? "active" : ""}"
+                      data-note="${n.id}" title="${n.link_id ? "Note on a saved link" : ""}">
                 <i data-lucide="${n.link_id ? "link" : "file-text"}"></i>
                 <span class="sidebar-cat-name">${escHtml(n.title || "Untitled")}</span>
               </button>
@@ -1441,7 +1442,7 @@ function renderContentTypes(ul, meta) {
       rows.push(`
         <li>
           <a href="/?${qs}&ct=${ct.id}" data-ct="${ct.id}"
-             class="sidebar-cat-link ${activeCt === String(ct.id) ? "active" : ""}">
+             class="sidebar-cat-link ${activeCt === String(ct.id) && !_openNoteId ? "active" : ""}">
             <i data-lucide="${KIND_ICON[ct.kind] || "file"}"></i>
             <span class="sidebar-cat-name">${escHtml(ct.title)}</span>
             ${ct.count ? `<span class="sidebar-cat-badge">${ct.count}</span>` : ""}
@@ -1457,6 +1458,7 @@ function renderContentTypes(ul, meta) {
   });
   ul.querySelectorAll("[data-note]").forEach(btn => {
     btn.addEventListener("click", () => {
+      _openNoteId = btn.dataset.note;
       markSidebarActive(null);
       btn.classList.add("active");
       window.openNoteById?.(btn.dataset.note);
@@ -1487,6 +1489,11 @@ function renderContentTypes(ul, meta) {
 
 /* ── In-place view switching ─────────────────────────────── */
 // ctId null means the category overview
+window.setSidebarNote = noteId => {
+  _openNoteId = noteId || null;
+  renderSidebar();
+};
+
 function markSidebarActive(ctId) {
   document.querySelectorAll("#sidebar-cats .sidebar-cat-link")
     .forEach(el => el.classList.toggle("active", ctId != null && el.dataset.ct === String(ctId)));
@@ -1494,12 +1501,14 @@ function markSidebarActive(ctId) {
 }
 
 function goContentType(ctId) {
+  _openNoteId = null;
   history.pushState({}, "", `/?${drillQuery(_drillId)}&ct=${ctId}`);
   markSidebarActive(ctId);
   window.showContentTypeView?.(ctId);
 }
 
 function goCategoryOverview() {
+  _openNoteId = null;
   history.pushState({}, "", `/?${drillQuery(_drillId)}&type=all`);
   markSidebarActive("overview");
   window.showCategoryOverview?.();
@@ -1507,6 +1516,7 @@ function goCategoryOverview() {
 
 // keep browser back/forward working for those pushes
 window.addEventListener("popstate", () => {
+  _openNoteId = null;
   const params = new URLSearchParams(location.search);
   const tag = params.get("uncategorised") === "true" ? "" : params.get("tag");
   // a different category needs its own data, so let the page load handle it

@@ -63,6 +63,7 @@ function setView(v, persist = true) {
     el.classList.toggle("active", editing && el.dataset.id === String(currentNoteId));
   });
   if (!editing) { hideBubble(); hideLinkBar(); }
+  if (!editing && v !== "ct") window.setSidebarNote?.(null);
   if (v === "notes" || editing) renderList();
   if (v === "all") renderOverview();
   if (v === "ct") window.renderContentTypeView?.(currentCtId);
@@ -552,6 +553,7 @@ async function openNote(id, switchTab = true) {
 
   statusEl.textContent = "";
   renderList();
+  window.setSidebarNote?.(id);
   updateToolbarState();
   return true;
 }
