@@ -921,6 +921,31 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
 .ct-head .btn-primary,
 .ct-head .filter-wrap { margin-left: auto; }
 
+.select-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  font-size: 12.5px;
+  color: var(--n-300);
+  cursor: pointer;
+}
+.select-toggle input { accent-color: var(--n-400); }
+.ct-head .select-toggle + * { margin-left: 0; }
+#bulk-actions-btn i { width: 13px; height: 13px; }
+#bulk-actions-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* the checkbox stands in for the favicon while selecting */
+.link-pick {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  flex: none;
+}
+.link-pick input { accent-color: var(--n-300); width: 15px; height: 15px; cursor: pointer; }
+
 .filter-wrap { position: relative; }
 .filter-btn.on { border-color: var(--n-500); color: var(--n-100); }
 .filter-btn i { width: 14px; height: 14px; }

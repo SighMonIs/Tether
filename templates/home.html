@@ -116,6 +116,22 @@
   </div>
 </dialog>
 
+<dialog id="bulk-category-modal" class="modal">
+  <div class="modal-content">
+    <h2 id="bulk-category-title">Change category</h2>
+    <form id="bulk-category-form" onsubmit="submitBulkCategory(event)">
+      <div class="form-group">
+        <label for="bulk-category-select">Category</label>
+        <select id="bulk-category-select" class="edit-tag-select"></select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" onclick="document.getElementById('bulk-category-modal').close()">Cancel</button>
+        <button type="submit" class="btn-primary">Move</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
 <dialog id="note-category-modal" class="modal">
   <div class="modal-content">
     <h2>Change category</h2>
@@ -135,5 +151,5 @@
 </dialog>
 {% endblock %}
 {% block scripts %}
-<script type="module" src="/static/notes.js?v=072"></script>
+<script type="module" src="/static/notes.js?v=100"></script>
 {% endblock %}

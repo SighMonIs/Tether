@@ -164,13 +164,17 @@ function getDomain(url) {
   try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; }
 }
 
-function linkCardHtml(link) {
+function linkCardHtml(link, selectable = false) {
   const domain = escHtml(getDomain(link.url));
   return `
     <article class="link-row" data-id="${link.id}">
-      <span class="link-thumb">
-        ${link.favicon_url ? `<img src="${escHtml(link.favicon_url)}" alt="" onerror="this.style.display='none'">` : ""}
-      </span>
+      ${selectable && _selectMode
+        ? `<label class="link-pick">
+             <input type="checkbox" class="link-check" value="${link.id}" ${_selected.has(link.id) ? "checked" : ""}>
+           </label>`
+        : `<span class="link-thumb">
+             ${link.favicon_url ? `<img src="${escHtml(link.favicon_url)}" alt="" onerror="this.style.display='none'">` : ""}
+           </span>`}
       <span class="link-main">
         <a class="link-title" href="${escHtml(link.url)}" target="_blank" rel="noopener">${escHtml(link.title || domain)}</a>
         <span class="link-url">${domain}</span>
@@ -1302,6 +1306,9 @@ function noteRow(note) {
     </div>`;
 }
 
+let _selectMode = false;
+let _selected = new Set();
+
 let _ctData = null;                                  // the fetched bucket, unfiltered
 let _ctFilter = { sites: [], from: "", to: "" };
 
@@ -1367,6 +1374,151 @@ function ctFilterPanel() {
     </div>`;
 }
 
+function ctSelectBar() {
+  const n = _selected.size;
+  return `
+    <label class="select-toggle" title="Select links">
+      <input type="checkbox" id="select-mode" ${_selectMode ? "checked" : ""}>
+      <span>Select</span>
+    </label>
+    ${_selectMode ? `
+      <button type="button" class="btn-ghost" id="select-all">Select all</button>
+      <div class="filter-wrap">
+        <button type="button" class="btn-ghost" id="bulk-actions-btn" ${n ? "" : "disabled"}>
+          Actions${n ? ` · ${n}` : ""} <i data-lucide="chevron-down"></i>
+        </button>
+        <div class="row-menu" id="bulk-actions-menu">
+          <button type="button" class="row-menu-item" data-bulk="export">
+            <i data-lucide="download"></i> Export selected
+          </button>
+          <button type="button" class="row-menu-item" data-bulk="category">
+            <i data-lucide="folder"></i> Change category
+          </button>
+          <button type="button" class="row-menu-item danger" data-bulk="delete">
+            <i data-lucide="trash-2"></i> Delete
+          </button>
+        </div>
+      </div>` : ""}`;
+}
+
+function bindCtSelect(pane, ctId) {
+  const toggle = pane.querySelector("#select-mode");
+  if (toggle) {
+    toggle.addEventListener("change", () => {
+      _selectMode = toggle.checked;
+      if (!_selectMode) _selected.clear();
+      renderCtPane(ctId);
+    });
+  }
+  if (!_selectMode) return;
+
+  // only what the filter is currently showing
+  pane.querySelector("#select-all")?.addEventListener("click", () => {
+    const visible = filteredCtLinks().map(l => l.id);
+    const allOn = visible.every(id => _selected.has(id));
+    visible.forEach(id => allOn ? _selected.delete(id) : _selected.add(id));
+    renderCtPane(ctId);
+  });
+
+  pane.querySelectorAll(".link-check").forEach(box => {
+    box.addEventListener("change", () => {
+      box.checked ? _selected.add(box.value) : _selected.delete(box.value);
+      const btn = pane.querySelector("#bulk-actions-btn");
+      if (btn) {
+        btn.disabled = _selected.size === 0;
+        btn.innerHTML = `Actions${_selected.size ? ` · ${_selected.size}` : ""} <i data-lucide="chevron-down"></i>`;
+        lucide.createIcons();
+      }
+    });
+  });
+
+  const abtn = pane.querySelector("#bulk-actions-btn");
+  const amenu = pane.querySelector("#bulk-actions-menu");
+  if (abtn && amenu) {
+    abtn.addEventListener("click", ev => { ev.stopPropagation(); toggleRowMenu(abtn); });
+    amenu.addEventListener("click", ev => ev.stopPropagation());
+    amenu.querySelectorAll("[data-bulk]").forEach(b => {
+      b.addEventListener("click", () => {
+        closeRowMenus();
+        runBulkAction(b.dataset.bulk, ctId);
+      });
+    });
+  }
+}
+
+function selectedLinks() {
+  return ((_ctData && _ctData.links) || []).filter(l => _selected.has(l.id));
+}
+
+async function runBulkAction(action, ctId) {
+  const links = selectedLinks();
+  if (!links.length) return;
+
+  if (action === "export") {
+    // same shape as /api/export, built from what is already in hand
+    const tags = [];
+    const seen = new Set();
+    const link_tags = [];
+    for (const l of links) {
+      for (const t of l.tags) {
+        if (!seen.has(t.id)) { seen.add(t.id); tags.push(t); }
+        link_tags.push({ link_id: l.id, tag_id: t.id });
+      }
+    }
+    const payload = { version: 1, links: links.map(({ tags: _t, ...rest }) => rest), tags, link_tags };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "tether-selection.json";
+    a.click();
+    URL.revokeObjectURL(a.href);
+    toast(`Exported ${links.length} link${links.length === 1 ? "" : "s"}`);
+    return;
+  }
+
+  if (action === "category") {
+    _bulkCtId = ctId;
+    fillCategorySelect(document.getElementById("bulk-category-select"), "");
+    document.getElementById("bulk-category-title").textContent =
+      `Move ${links.length} link${links.length === 1 ? "" : "s"}`;
+    document.getElementById("bulk-category-modal").showModal();
+    return;
+  }
+
+  if (action === "delete") {
+    const ok = await showConfirm(
+      `Delete ${links.length} link${links.length === 1 ? "" : "s"}? This can't be undone.`);
+    if (!ok) return;
+    for (const l of links) {
+      await fetch(`/api/links/${l.id}`, { method: "DELETE", headers: headers() });
+    }
+    _selected.clear();
+    toast(`Deleted ${links.length}`);
+    await loadSidebarCats();
+    renderContentTypeView(ctId);
+  }
+}
+
+let _bulkCtId = null;
+
+async function submitBulkCategory(ev) {
+  ev.preventDefault();
+  const id = document.getElementById("bulk-category-select").value;
+  const cat = _sidebarTags.find(t => String(t.id) === String(id));
+  const links = selectedLinks();
+  for (const l of links) {
+    await fetch(`/api/links/${l.id}`, {
+      method: "PATCH", headers: headers(),
+      body: JSON.stringify({ tags: cat ? [cat.name] : [] }),
+    });
+  }
+  document.getElementById("bulk-category-modal").close();
+  _selected.clear();
+  toast(`Moved ${links.length} link${links.length === 1 ? "" : "s"}`);
+  await loadSidebarCats();
+  renderContentTypeView(_bulkCtId);
+}
+
 function bindCtFilter(pane, ctId) {
   const btn = pane.querySelector("#ct-filter-btn");
   const panel = pane.querySelector("#ct-filter-panel");
@@ -1407,12 +1559,13 @@ function renderCtPane(ctId) {
   const head = `
     <div class="ct-head">
       <h1>${escHtml(ct.title)}</h1>
+      ${kind === "links" ? ctSelectBar() : ""}
       ${kind === "links" ? ctFilterPanel() : ""}
     </div>`;
 
   let body;
   if (kind === "links") {
-    body = links.map(l => linkCardHtml(l)).join("")
+    body = links.map(l => linkCardHtml(l, true)).join("")
       || `<div class="empty-state">${n ? "No links match that filter." : "No links in here yet."}</div>`;
     if (n) {
       body = `<div class="filter-summary">Showing ${links.length} of ${_ctData.links.length}</div>` + body;
@@ -1424,7 +1577,7 @@ function renderCtPane(ctId) {
 
   pane.innerHTML = head + body;
   bindLinkRowMenus(pane);
-  if (kind === "links") bindCtFilter(pane, ctId);
+  if (kind === "links") { bindCtFilter(pane, ctId); bindCtSelect(pane, ctId); }
   lucide.createIcons();
 }
 
@@ -1436,6 +1589,8 @@ async function renderContentTypeView(ctId) {
   if (!res.ok) { pane.innerHTML = '<div class="empty-state">Not found.</div>'; return; }
   _ctData = await res.json();
   _ctFilter = { sites: [], from: "", to: "" };   // a fresh bucket starts unfiltered
+  _selectMode = false;
+  _selected.clear();
   renderCtPane(ctId);
 }
 
