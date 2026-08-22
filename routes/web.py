@@ -9,6 +9,7 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
 from db import db, get_setting
+from slugs import RESERVED, UNTAGGED, tag_slugs, note_slugs
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -28,24 +29,74 @@ def _get_base_url() -> str:
         return "http://localhost:5225"
 
 
-@router.get("/", response_class=HTMLResponse)
-async def home(request: Request):
+def _render_home(request: Request, view: dict):
     api_uuid = get_setting("uuid")
     with db() as conn:
-        tags = conn.execute("SELECT id, name, color FROM tags ORDER BY name").fetchall()
+        tags = conn.execute("SELECT id, name, color FROM tags ORDER BY position, name").fetchall()
         total = conn.execute("SELECT COUNT(*) FROM links").fetchone()[0]
     return templates.TemplateResponse("home.html", {
         "request": request,
         "tether_uuid": api_uuid,
         "tags": [dict(t) for t in tags],
         "total": total,
+        "view": view,
     })
 
 
-@router.get("/notes")
-async def notes_redirect(request: Request):
-    qs = f"?{request.url.query}" if request.url.query else ""
-    return RedirectResponse(f"/{qs}")
+def _blank_view() -> dict:
+    return {"tag": None, "uncategorised": False, "type": "all", "ct": None, "note": None}
+
+
+def _view_from_query(request: Request) -> dict:
+    """The old ?tag=&ct=&type= links still work, so bookmarks keep resolving."""
+    q = request.query_params
+    view = _blank_view()
+    if q.get("tag") and q["tag"].isdigit():
+        view["tag"] = int(q["tag"])
+    view["uncategorised"] = q.get("uncategorised") == "true"
+    if q.get("type") in ("all", "links", "notes"):
+        view["type"] = q["type"]
+    if q.get("ct") and q["ct"].isdigit():
+        view["ct"] = int(q["ct"])
+        view["type"] = "ct"
+    return view
+
+
+def _content_type_id(conn, tag_id: int, kind: str):
+    row = conn.execute(
+        "SELECT id FROM content_types WHERE tag_id=? AND kind=? ORDER BY position, id LIMIT 1",
+        (tag_id, kind),
+    ).fetchone()
+    return row["id"] if row else None
+
+
+def _resolve_category(conn, slug: str):
+    """Returns (tag_id, uncategorised) or None when the slug matches nothing."""
+    if slug == UNTAGGED:
+        return (None, True)
+    for tag_id, tag_slug in tag_slugs(conn).items():
+        if tag_slug == slug:
+            return (tag_id, False)
+    return None
+
+
+@router.get("/", response_class=HTMLResponse)
+async def home(request: Request):
+    return _render_home(request, _view_from_query(request))
+
+
+@router.get("/links", response_class=HTMLResponse)
+async def all_links(request: Request):
+    view = _blank_view()
+    view["type"] = "links"
+    return _render_home(request, view)
+
+
+@router.get("/notes", response_class=HTMLResponse)
+async def all_notes(request: Request):
+    view = _blank_view()
+    view["type"] = "notes"
+    return _render_home(request, view)
 
 
 @router.get("/settings", response_class=HTMLResponse)
@@ -252,3 +303,62 @@ async def download_shortcut():
         media_type="application/octet-stream",
         headers={"Content-Disposition": 'attachment; filename="tether.shortcut"'},
     )
+
+
+# ── Readable category paths ───────────────────────────────────────────────────
+# Declared last: these patterns would otherwise swallow /settings, /links, …
+
+
+@router.get("/{category}", response_class=HTMLResponse)
+async def category_overview(request: Request, category: str):
+    if category in RESERVED:
+        return RedirectResponse("/")
+    with db() as conn:
+        found = _resolve_category(conn, category)
+    if not found:
+        return RedirectResponse("/")
+    tag_id, uncat = found
+    view = _blank_view()
+    view["tag"] = tag_id
+    view["uncategorised"] = uncat
+    return _render_home(request, view)
+
+
+@router.get("/{category}/{kind}", response_class=HTMLResponse)
+async def category_kind(request: Request, category: str, kind: str):
+    if kind not in ("links", "notes"):
+        return RedirectResponse(f"/{category}")
+    with db() as conn:
+        found = _resolve_category(conn, category)
+        if not found:
+            return RedirectResponse("/")
+        tag_id, uncat = found
+        view = _blank_view()
+        view["tag"] = tag_id
+        view["uncategorised"] = uncat
+        # Untagged owns no content types, so it uses the filtered built-in views
+        if tag_id is not None and kind == "links":
+            ct = _content_type_id(conn, tag_id, "links")
+            view["ct"] = ct
+            view["type"] = "ct" if ct else "links"
+        else:
+            view["type"] = kind
+    return _render_home(request, view)
+
+
+@router.get("/{category}/notes/{note}", response_class=HTMLResponse)
+async def category_note(request: Request, category: str, note: str):
+    with db() as conn:
+        found = _resolve_category(conn, category)
+        if not found:
+            return RedirectResponse("/")
+        tag_id, uncat = found
+        note_id = next((nid for nid, s in note_slugs(conn, tag_id).items() if s == note), None)
+    if not note_id:
+        return RedirectResponse(f"/{category}")
+    view = _blank_view()
+    view["tag"] = tag_id
+    view["uncategorised"] = uncat
+    view["type"] = "editor"
+    view["note"] = note_id
+    return _render_home(request, view)

@@ -39,8 +39,10 @@ const notesListView = document.getElementById("notes-list-view");
 const noteView = document.getElementById("note-editor-view");
 const linksView = document.getElementById("links-view");
 
+const VIEW = window.TETHER_VIEW || { tag: null, uncategorised: false, type: "all", ct: null, note: null };
+
 let currentView = "all";  // "all" | "links" | "notes" | "ct" | "editor"
-let currentCtId = new URLSearchParams(location.search).get("ct");
+let currentCtId = VIEW.ct ? String(VIEW.ct) : null;
 
 let noteQuery = "";
 const searchInput = document.getElementById("search-input");
@@ -76,8 +78,8 @@ window.setShowingLinks = on => setView(on ? "links" : "notes");
 window.showContentTypeView = ctId => { currentCtId = ctId; setView("ct"); };
 window.showCategoryOverview = () => setView("all");
 
-const filterTagId = urlParams.get("tag") ? Number(urlParams.get("tag")) : null;
-const filterUncategorised = urlParams.get("uncategorised") === "true";
+const filterTagId = VIEW.tag || null;
+const filterUncategorised = !!VIEW.uncategorised;
 
 let currentNoteId = null;
 let saveTimeout = null;
@@ -485,7 +487,7 @@ async function renderCategoryOverview() {
       <section class="ov-section">
         <div class="ov-header">
           <span class="ov-label">${escHtml(ct.title)}</span>
-          <a class="ov-viewall" href="/?tag=${filterTagId}&ct=${ct.id}">View all</a>
+          <a class="ov-viewall" href="${categoryBase()}/${ct.kind === "notes" ? "notes" : "links"}">View all</a>
         </div>
         ${body}
       </section>`;
@@ -526,18 +528,26 @@ async function renderRootOverview() {
   if (window.lucide) lucide.createIcons();
 }
 
-// navigate so the URL carries the view and Back returns to the overview
+// the readable path for whichever category this page is scoped to
+function categoryBase() {
+  if (filterUncategorised) return "/untagged";
+  const tag = allTags.find(t => t.id === filterTagId);
+  return tag ? `/${tag.slug}` : "";
+}
+
+// navigate so the path carries the view and Back returns to the overview
 document.querySelectorAll(".ov-viewall").forEach(btn => {
-  btn.addEventListener("click", () => {
-    const qs = new URLSearchParams(location.search);
-    qs.set("type", btn.dataset.goto);
-    location.search = qs.toString();
-  });
+  btn.addEventListener("click", () => { location.href = `${categoryBase()}/${btn.dataset.goto}`; });
 });
 
 async function openNote(id, switchTab = true) {
   if (switchTab) setView("editor");
-  if (id === currentNoteId) { renderList(); return true; }
+  if (id === currentNoteId) {
+    // already loaded, but the path may have moved on since
+    renderList();
+    window.setSidebarNote?.(id, notesCache.find(n => n.id === id)?.slug);
+    return true;
+  }
   const res = await fetch(`/api/notes/${id}`, { headers: authHeaders(false) });
   if (!res.ok) return false;
   const note = await res.json();
@@ -553,7 +563,7 @@ async function openNote(id, switchTab = true) {
 
   statusEl.textContent = "";
   renderList();
-  window.setSidebarNote?.(id);
+  window.setSidebarNote?.(id, notesCache.find(n => n.id === id)?.slug);
   updateToolbarState();
   return true;
 }
@@ -627,15 +637,13 @@ async function loadNotes() {
   setTimeout(() => { suppressDirty = false; }, 0);
   statusEl.textContent = "";
   renderList();
+  if (VIEW.note) { openNote(VIEW.note); return; }
   if (currentView === "all") renderOverview();
 }
 
 // runs last: setView() calls renderList(), which reads the consts declared above
-// ?ct= opens one of the user's content types; otherwise ?type= picks a built-in
-// view and everything falls back to the category overview
-const typeParam = urlParams.get("type");
-setView(urlParams.get("ct") ? "ct"
-  : ["all", "links", "notes"].includes(typeParam) ? typeParam : "all");
+// the server already worked out which view the path means
+setView(["all", "links", "notes", "ct"].includes(VIEW.type) ? VIEW.type : "all");
 
 (async () => {
   await loadTags();

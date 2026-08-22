@@ -15,6 +15,7 @@ from pydantic import BaseModel, field_validator
 from typing import Any
 
 from db import db, get_setting, set_setting, NOTES_DIR
+from slugs import slugify, tag_slugs, note_slugs
 
 router = APIRouter(prefix="/api")
 
@@ -217,7 +218,10 @@ def list_tags(
             FROM tags t
             ORDER BY t.position, t.name
         """).fetchall()
+        slugs = tag_slugs(conn)
     result = [dict(r) for r in rows]
+    for r in result:
+        r["slug"] = slugs.get(r["id"], "")
     if shortcut:
         result.append({"id": "__new__", "name": NEW_TAG_SENTINEL, "color": "#888899", "position": 9999})
     return result
@@ -665,13 +669,26 @@ _NOTE_SELECT = """
 """
 
 
-def _note_dict(row) -> dict:
+def _note_dict(row, slugs: dict | None = None) -> dict:
     d = dict(row)
     tag_name = d.pop("tag_name")
     tag_color = d.pop("tag_color")
     tag_id = d["tag_id"]
     d["tag"] = {"id": tag_id, "name": tag_name, "color": tag_color} if tag_id else None
+    d["slug"] = (slugs or {}).get(d["id"]) or slugify(d["title"])
     return d
+
+
+def _note_dicts(conn, rows) -> list:
+    """Slugs only need de-duplicating against the notes in the same category."""
+    cache: dict = {}
+    out = []
+    for r in rows:
+        tag_id = r["tag_id"]
+        if tag_id not in cache:
+            cache[tag_id] = note_slugs(conn, tag_id)
+        out.append(_note_dict(r, cache[tag_id]))
+    return out
 
 
 @router.get("/notes")
@@ -692,7 +709,7 @@ def list_notes(
         rows = conn.execute(
             f"{_NOTE_SELECT} {where} ORDER BY n.position ASC", params
         ).fetchall()
-    return [_note_dict(r) for r in rows]
+        return _note_dicts(conn, rows)
 
 
 class NoteCreate(BaseModel):
@@ -876,7 +893,7 @@ def list_content_type_items(ct_id: int, x_tether_uuid: str | None = Header(defau
                 f"{_NOTE_SELECT} JOIN note_content_types nct ON nct.note_id=n.id "
                 "WHERE nct.content_type_id=? ORDER BY n.position ASC", (ct_id,)
             ).fetchall()
-            out["notes"] = [_note_dict(r) for r in rows]
+            out["notes"] = _note_dicts(conn, rows)
         return out
 
 

@@ -1,3 +1,6 @@
+// The server resolves the readable path into ids before the page loads.
+const VIEW = window.TETHER_VIEW || { tag: null, uncategorised: false, type: "all", ct: null, note: null };
+
 /* ── Confirm modal ───────────────────────────────────────── */
 function showConfirm(message, okLabel = "Delete") {
   return new Promise(resolve => {
@@ -1110,7 +1113,7 @@ function openAddPanel() {
   if (!panel) return;
   panel.classList.add("open");
   const sel = document.getElementById("add-panel-category");
-  const current = new URLSearchParams(location.search).get("tag");
+  const current = VIEW.tag ? String(VIEW.tag) : null;
   sel.innerHTML = `<option value="">Untagged</option>` +
     _sidebarTags.map(t =>
       `<option value="${t.id}" ${String(t.id) === current ? "selected" : ""}>${escHtml(t.name)}</option>`
@@ -1213,14 +1216,28 @@ const KIND_ICON = { links: "link", notes: "file-text" };
 const KIND_LABEL = { links: "Links", notes: "Notes" };
 let _contentTypes = [];   // for the category currently drilled into
 let _ctNotes = {};        // notes keyed by their notes-kind content type id
-let _openNoteId = null;   // the note in the editor wins over the URL's highlight
+let _openNoteId = null;   // the note in the editor wins over the path's highlight
+let _activeCt = VIEW.ct ? String(VIEW.ct) : null;
+let _activeType = VIEW.type === "ct" ? "ct" : VIEW.type;
+
+/* ── Readable paths ──────────────────────────────────────── */
+// The server resolves the path into ids before the page loads; from then on the
+// front end builds the same paths back out of the slugs the API returns.
+
+function categorySlug(drillId) {
+  if (drillId === "") return "untagged";
+  const t = _sidebarTags.find(x => String(x.id) === String(drillId));
+  return t ? t.slug : "";
+}
+
+function categoryPath(drillId, tail = "") {
+  const slug = categorySlug(drillId);
+  if (!slug) return "/";
+  return `/${slug}${tail}`;
+}
 
 function folderSvg(color) {
   return `<svg class="sidebar-cat-folder" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
-}
-
-function drillQuery(id) {
-  return id === "" ? "uncategorised=true" : `tag=${encodeURIComponent(id)}`;
 }
 
 function drillMeta(id) {
@@ -1249,9 +1266,9 @@ function renderSidebar(slide) {
     if (back) back.style.display = "";
     if (title) {
       // the category itself is the default view — what "All" used to be
-      const onOverview = !new URLSearchParams(location.search).get("ct") && !_openNoteId;
+      const onOverview = !_activeCt && _activeType === "all" && !_openNoteId;
       title.style.display = "";
-      title.href = `/?${drillQuery(_drillId)}&type=all`;
+      title.href = categoryPath(_drillId);
       title.classList.toggle("active", onOverview);
       title.innerHTML = folderSvg(escHtml(meta.color)) +
         `<span>${escHtml(meta.name)}</span>`;
@@ -1270,14 +1287,13 @@ function renderSidebar(slide) {
 }
 
 function renderCategoryList(ul) {
-  const params = new URLSearchParams(location.search);
-  const activeTag = params.get("tag");
-  const activeUncat = params.get("uncategorised") === "true";
+  const activeTag = VIEW.tag ? String(VIEW.tag) : null;
+  const activeUncat = VIEW.uncategorised;
 
   // navigating loads the category's overview; the sidebar lands drilled in
   const row = (id, name, color, badge, menu) => `
     <li ${id === "" ? "" : `data-order="${id}"`}>
-      <a href="/?${drillQuery(id)}&type=all" ${id === "" ? "" : `data-cat="${id}"`}
+      <a href="${categoryPath(id)}" ${id === "" ? "" : `data-cat="${id}"`}
          class="sidebar-cat-link ${(id === "" ? activeUncat : activeTag === String(id)) ? "active" : ""}">
         ${folderSvg(color)}
         <span class="sidebar-cat-name">${name}</span>
@@ -1360,10 +1376,8 @@ function initListDrag(ul, sel, key, save) {
 }
 
 function renderContentTypes(ul, meta) {
-  const params = new URLSearchParams(location.search);
-  const activeCt = params.get("ct");
-  const activeType = params.get("type");
-  const qs = drillQuery(_drillId);
+  const activeCt = _activeCt;
+  const activeType = _activeType;
   const rows = [];
 
   // Untagged is the absence of a category, so it owns no content types — give it
@@ -1371,7 +1385,7 @@ function renderContentTypes(ul, meta) {
   if (_drillId === "") {
     rows.push(`
       <li>
-        <a href="/?${qs}&type=links" class="sidebar-cat-link ${activeType === "links" ? "active" : ""}">
+        <a href="${categoryPath(_drillId, "/links")}" class="sidebar-cat-link ${activeType === "links" ? "active" : ""}">
           <i data-lucide="link"></i>
           <span class="sidebar-cat-name">Links</span>
         </a>
@@ -1441,7 +1455,7 @@ function renderContentTypes(ul, meta) {
     } else {
       rows.push(`
         <li>
-          <a href="/?${qs}&ct=${ct.id}" data-ct="${ct.id}"
+          <a href="${categoryPath(_drillId, ct.kind === "links" ? "/links" : "/notes")}" data-ct="${ct.id}"
              class="sidebar-cat-link ${activeCt === String(ct.id) && !_openNoteId ? "active" : ""}">
             <i data-lucide="${KIND_ICON[ct.kind] || "file"}"></i>
             <span class="sidebar-cat-name">${escHtml(ct.title)}</span>
@@ -1489,8 +1503,12 @@ function renderContentTypes(ul, meta) {
 
 /* ── In-place view switching ─────────────────────────────── */
 // ctId null means the category overview
-window.setSidebarNote = noteId => {
+window.setSidebarNote = (noteId, slug) => {
   _openNoteId = noteId || null;
+  if (noteId && slug && _drillId !== null) {
+    const path = categoryPath(_drillId, `/notes/${slug}`);
+    if (path !== "/" && location.pathname !== path) history.pushState({}, "", path);
+  }
   renderSidebar();
 };
 
@@ -1502,34 +1520,27 @@ function markSidebarActive(ctId) {
 
 function goContentType(ctId) {
   _openNoteId = null;
-  history.pushState({}, "", `/?${drillQuery(_drillId)}&ct=${ctId}`);
+  _activeCt = String(ctId);
+  _activeType = "ct";
+  const ct = _contentTypes.find(c => String(c.id) === String(ctId));
+  history.pushState({}, "", categoryPath(_drillId, ct && ct.kind === "notes" ? "/notes" : "/links"));
   markSidebarActive(ctId);
   window.showContentTypeView?.(ctId);
 }
 
 function goCategoryOverview() {
   _openNoteId = null;
-  history.pushState({}, "", `/?${drillQuery(_drillId)}&type=all`);
+  _activeCt = null;
+  _activeType = "all";
+  history.pushState({}, "", categoryPath(_drillId));
   markSidebarActive("overview");
   window.showCategoryOverview?.();
 }
 
 // keep browser back/forward working for those pushes
-window.addEventListener("popstate", () => {
-  _openNoteId = null;
-  const params = new URLSearchParams(location.search);
-  const tag = params.get("uncategorised") === "true" ? "" : params.get("tag");
-  // a different category needs its own data, so let the page load handle it
-  if (String(tag) !== String(_drillId)) { location.reload(); return; }
-  const ctId = params.get("ct");
-  if (ctId) {
-    markSidebarActive(ctId);
-    window.showContentTypeView?.(ctId);
-  } else {
-    markSidebarActive("overview");
-    window.showCategoryOverview?.();
-  }
-});
+// The path is resolved server-side, so let a real load handle back/forward
+// rather than duplicating that resolution here.
+window.addEventListener("popstate", () => location.reload());
 
 async function loadCtNotes() {
   _ctNotes = {};
@@ -1620,9 +1631,9 @@ async function loadSidebarCats() {
     _uncatCount = (uncatRes.ok ? await uncatRes.json() : {}).count || 0;
 
     // land already drilled in when the page is scoped to one category
-    const params = new URLSearchParams(location.search);
-    if (params.get("uncategorised") === "true") _drillId = "";
-    else if (params.get("tag")) _drillId = params.get("tag");
+    if (VIEW.uncategorised) _drillId = "";
+    else if (VIEW.tag) _drillId = String(VIEW.tag);
+    _openNoteId = VIEW.note || null;
 
     await loadContentTypes(_drillId);
     await loadCtNotes();
@@ -1711,25 +1722,17 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   if (document.getElementById("links-container")) {
-    // activate filter from URL param
-    const urlParams = new URLSearchParams(location.search);
-    const tagParam = urlParams.get("tag");
-    const uncatParam = urlParams.get("uncategorised");
-    if (tagParam) {
-      currentTag = tagParam;
-      document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
-      document.querySelector(".filter-chip[data-tag='']")?.classList.add("active");
-      // resolve tag name for heading
+    // scope the links list to whatever category the path resolved to
+    if (VIEW.tag) {
+      currentTag = String(VIEW.tag);
       fetch("/api/tags", { headers: headers() })
         .then(r => r.json())
         .then(tags => {
-          const tag = tags.find(t => String(t.id) === String(tagParam));
+          const tag = tags.find(t => String(t.id) === String(VIEW.tag));
           if (tag) setPageTitle(tag.name);
         });
-    } else if (uncatParam === "true") {
+    } else if (VIEW.uncategorised) {
       currentUncat = true;
-      document.querySelectorAll(".filter-chip").forEach(c => c.classList.remove("active"));
-      document.querySelector(".filter-chip[data-tag='']")?.classList.add("active");
       setPageTitle("Untagged");
     }
     initSearch();
