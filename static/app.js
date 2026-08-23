@@ -595,11 +595,11 @@ async function regenerateKey() {
 
 /* ── Quick add (from share sheet) ────────────────────────── */
 let _quickAddUrl = "";
-let _quickAddTitle = "";
+let _quickAddMeta = {};
 
 async function openQuickAdd(url) {
   _quickAddUrl = url;
-  _quickAddTitle = "";
+  _quickAddMeta = {};
   document.getElementById("quick-add-note").value = "";
   document.getElementById("quick-add-form").style.display = "none";
   document.getElementById("quick-add-loading").style.display = "";
@@ -612,11 +612,10 @@ async function openQuickAdd(url) {
   const meta = metaRes.ok ? await metaRes.json() : {};
   if (tagsRes.ok && !_sidebarTags.length) _sidebarTags = await tagsRes.json();
 
-  _quickAddTitle = meta.title || "";
+  _quickAddMeta = meta;
   document.getElementById("quick-add-favicon").src = meta.favicon_url || "";
-  document.getElementById("quick-add-title").textContent = meta.title || getDomain(url);
-  document.getElementById("quick-add-desc").textContent = meta.description || "";
-  document.getElementById("quick-add-desc").style.display = meta.description ? "" : "none";
+  document.getElementById("quick-add-title").value = meta.title || getDomain(url);
+  document.getElementById("quick-add-desc").value = meta.description || "";
   document.getElementById("quick-add-url").textContent = url;
   fillCategorySelect(document.getElementById("quick-add-category"), "");
 
@@ -632,14 +631,20 @@ function quickAddCategory() {
 
 async function submitQuickAdd(e) {
   e.preventDefault();
-  const btn = e.submitter;
-  btn.disabled = true;
-  btn.textContent = "Saving…";
+  // e.submitter is absent when the form is submitted other than by its button
+  const btn = e.submitter || e.target.querySelector('button[type="submit"]');
+  if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
 
   const res = await fetch("/api/links", {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ url: _quickAddUrl, tags: quickAddCategory() }),
+    body: JSON.stringify({
+      url: _quickAddUrl,
+      title: document.getElementById("quick-add-title").value.trim(),
+      description: document.getElementById("quick-add-desc").value.trim(),
+      favicon_url: _quickAddMeta.favicon_url || "",
+      tags: quickAddCategory(),
+    }),
   });
 
   if (res.ok) {
@@ -649,7 +654,12 @@ async function submitQuickAdd(e) {
       const noteRes = await fetch("/api/notes", {
         method: "POST",
         headers: headers(),
-        body: JSON.stringify({ title: _quickAddTitle || getDomain(_quickAddUrl), link_id: id }),
+        body: JSON.stringify({
+          title: document.getElementById("quick-add-title").value.trim() || getDomain(_quickAddUrl),
+          link_id: id,
+          // the note belongs wherever the link was filed
+          tag_id: Number(document.getElementById("quick-add-category").value) || null,
+        }),
       });
       if (noteRes.ok) {
         const note = await noteRes.json();
@@ -668,8 +678,7 @@ async function submitQuickAdd(e) {
     toast("Failed to save link");
   }
 
-  btn.disabled = false;
-  btn.textContent = "Save";
+  if (btn) { btn.disabled = false; btn.textContent = "Save"; }
 }
 
 /* ── Add note from link ──────────────────────────────────── */

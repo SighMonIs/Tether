@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=102">
+  <link rel="stylesheet" href="/static/style.css?v=103">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <meta name="tether-uuid" content="{{ tether_uuid | default('') }}">
   <script>
@@ -113,13 +113,17 @@
       <h2>Save to Tether</h2>
       <div id="quick-add-loading" class="quick-add-loading">Fetching page info…</div>
       <form id="quick-add-form" onsubmit="submitQuickAdd(event)" style="display:none">
-        <div class="quick-add-preview">
+        <div class="quick-add-source">
           <img id="quick-add-favicon" class="favicon" src="" alt="" onerror="this.style.display='none'">
-          <div class="quick-add-preview-text">
-            <div id="quick-add-title" class="quick-add-title"></div>
-            <div id="quick-add-desc" class="quick-add-desc"></div>
-            <div id="quick-add-url" class="quick-add-url"></div>
-          </div>
+          <span id="quick-add-url" class="quick-add-url"></span>
+        </div>
+        <div class="form-group">
+          <label for="quick-add-title">Title</label>
+          <input type="text" id="quick-add-title" placeholder="Page title" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label for="quick-add-desc">Description</label>
+          <textarea id="quick-add-desc" class="import-textarea" rows="3" placeholder="What is this about?"></textarea>
         </div>
         <div class="form-group">
           <label for="quick-add-category">Category</label>
@@ -212,7 +216,7 @@
     </button>
   </div>
 
-  <script src="/static/app.js?v=101"></script>
+  <script src="/static/app.js?v=104"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
