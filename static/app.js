@@ -1378,8 +1378,7 @@ function ctSelectBar() {
   const n = _selected.size;
   return `
     <label class="select-toggle" title="Select links">
-      <input type="checkbox" id="select-mode" ${_selectMode ? "checked" : ""}>
-      <span>Select</span>
+      <input type="checkbox" id="select-mode" aria-label="Select links" ${_selectMode ? "checked" : ""}>
     </label>
     ${_selectMode ? `
       <button type="button" class="btn-ghost" id="select-all">Select all</button>

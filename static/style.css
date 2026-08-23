@@ -924,13 +924,65 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
 .select-toggle {
   display: flex;
   align-items: center;
-  gap: 7px;
   margin-left: auto;
-  font-size: 12.5px;
-  color: var(--n-300);
   cursor: pointer;
 }
-.select-toggle input { accent-color: var(--n-400); }
+
+/* ── Checkbox ────────────────────────────────────────────── */
+.select-toggle input,
+.link-pick input,
+.filter-site-row input,
+.export-cat-row input {
+  appearance: none;
+  -webkit-appearance: none;
+  position: relative;
+  width: 16px;
+  height: 16px;
+  flex: none;
+  margin: 0;
+  padding: 0;                 /* .add-field input would otherwise pad it wider */
+  background: var(--bg);
+  border: 1px solid var(--n-600);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+.select-toggle input:hover,
+.link-pick input:hover,
+.filter-site-row input:hover,
+.export-cat-row input:hover { border-color: var(--n-400); }
+
+.select-toggle input:checked,
+.link-pick input:checked,
+.filter-site-row input:checked,
+.export-cat-row input:checked {
+  background: var(--n-200);
+  border-color: var(--n-200);
+}
+
+/* the tick: two borders on a rotated box */
+.select-toggle input:checked::after,
+.link-pick input:checked::after,
+.filter-site-row input:checked::after,
+.export-cat-row input:checked::after {
+  content: "";
+  position: absolute;
+  left: 5px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid var(--surface);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+
+.select-toggle input:focus-visible,
+.link-pick input:focus-visible,
+.filter-site-row input:focus-visible,
+.export-cat-row input:focus-visible {
+  outline: 2px solid var(--n-500);
+  outline-offset: 2px;
+}
 .ct-head .select-toggle + * { margin-left: 0; }
 #bulk-actions-btn i { width: 13px; height: 13px; }
 #bulk-actions-btn:disabled { opacity: 0.45; cursor: default; }
@@ -944,7 +996,7 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
   height: 26px;
   flex: none;
 }
-.link-pick input { accent-color: var(--n-300); width: 15px; height: 15px; cursor: pointer; }
+
 
 .filter-wrap { position: relative; }
 .filter-btn.on { border-color: var(--n-500); color: var(--n-100); }
@@ -983,7 +1035,7 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
 }
 .filter-site-row > span:nth-of-type(1) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .filter-site-count { font-size: 11px; color: var(--subtext); }
-.filter-site-row input { accent-color: var(--n-400); }
+
 
 .filter-dates { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .filter-panel input[type="date"] {
@@ -1586,7 +1638,7 @@ a.ov-viewall { text-decoration: underline; }
   font-size: 12.5px;
   cursor: pointer;
 }
-.export-cat-row input { accent-color: var(--n-400); }
+
 
 .export-options {
   display: flex;
