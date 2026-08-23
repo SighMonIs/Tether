@@ -1383,30 +1383,36 @@ function ctFilterPanel() {
     </div>`;
 }
 
-function ctSelectBar() {
+// the Actions menu sits in the header's centre column
+function ctActionsMenu() {
+  if (!_selectMode) return "";
   const n = _selected.size;
   return `
+    <div class="filter-wrap">
+      <button type="button" class="btn-ghost" id="bulk-actions-btn" ${n ? "" : "disabled"}>
+        Actions${n ? ` · ${n}` : ""} <i data-lucide="chevron-down"></i>
+      </button>
+      <div class="row-menu" id="bulk-actions-menu">
+        <button type="button" class="row-menu-item" data-bulk="export">
+          <i data-lucide="download"></i> Export selected
+        </button>
+        <button type="button" class="row-menu-item" data-bulk="category">
+          <i data-lucide="folder"></i> Change category
+        </button>
+        <button type="button" class="row-menu-item danger" data-bulk="delete">
+          <i data-lucide="trash-2"></i> Delete
+        </button>
+      </div>
+    </div>`;
+}
+
+// Select all grows leftwards from the checkbox, so the checkbox itself never moves
+function ctSelectControls() {
+  return `
+    ${_selectMode ? `<button type="button" class="btn-ghost" id="select-all">Select all</button>` : ""}
     <label class="select-toggle" title="Select links">
       <input type="checkbox" id="select-mode" aria-label="Select links" ${_selectMode ? "checked" : ""}>
-    </label>
-    ${_selectMode ? `
-      <button type="button" class="btn-ghost" id="select-all">Select all</button>
-      <div class="filter-wrap">
-        <button type="button" class="btn-ghost" id="bulk-actions-btn" ${n ? "" : "disabled"}>
-          Actions${n ? ` · ${n}` : ""} <i data-lucide="chevron-down"></i>
-        </button>
-        <div class="row-menu" id="bulk-actions-menu">
-          <button type="button" class="row-menu-item" data-bulk="export">
-            <i data-lucide="download"></i> Export selected
-          </button>
-          <button type="button" class="row-menu-item" data-bulk="category">
-            <i data-lucide="folder"></i> Change category
-          </button>
-          <button type="button" class="row-menu-item danger" data-bulk="delete">
-            <i data-lucide="trash-2"></i> Delete
-          </button>
-        </div>
-      </div>` : ""}`;
+    </label>`;
 }
 
 function bindCtSelect(pane, ctId) {
@@ -1564,12 +1570,16 @@ function renderCtPane(ctId) {
   const links = kind === "links" ? filteredCtLinks() : [];
   const n = ctFilterCount();
 
-  const head = `
+  const head = kind === "links" ? `
     <div class="ct-head">
       <h1>${escHtml(ct.title)}</h1>
-      ${kind === "links" ? ctSelectBar() : ""}
-      ${kind === "links" ? ctFilterPanel() : ""}
-    </div>`;
+      <div class="ct-head-mid">${ctActionsMenu()}</div>
+      <div class="ct-head-right">
+        ${ctSelectControls()}
+        ${ctFilterPanel()}
+      </div>
+    </div>` : `
+    <div class="ct-head"><h1>${escHtml(ct.title)}</h1></div>`;
 
   let body;
   if (kind === "links") {
