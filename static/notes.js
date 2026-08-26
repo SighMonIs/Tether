@@ -496,7 +496,6 @@ async function renderCategoryOverview() {
       <section class="ov-section">
         <div class="ov-header">
           <span class="ov-label">${escHtml(ct.title)}</span>
-          <a class="ov-viewall" href="${categoryBase()}/${ct.kind === "notes" ? "notes" : "links"}">View all</a>
         </div>
         ${body}
       </section>`;
