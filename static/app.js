@@ -1353,7 +1353,10 @@ function ctFilterPanel() {
       </button>
       <div class="filter-panel" id="ct-filter-panel">
         <div class="add-field">
-          <span>Websites</span>
+          <div class="filter-head">
+            <span>Websites</span>
+            <span class="filter-pick" id="site-pick"></span>
+          </div>
           <div class="filter-sites">
             ${sites.map(d => `
               <label class="filter-site-row">
@@ -1533,6 +1536,29 @@ async function submitBulkCategory(ev) {
   renderContentTypeView(_bulkCtId);
 }
 
+function sitePickHtml(total, checked) {
+  const all = `<button type="button" data-pick="all">All</button>`;
+  const none = `<button type="button" data-pick="none">None</button>`;
+  if (!total) return "";
+  if (checked === 0) return all;
+  if (checked === total) return none;
+  return `${all}<span class="filter-pick-sep">/</span>${none}`;
+}
+
+function refreshSitePick(pane) {
+  const el = pane.querySelector("#site-pick");
+  if (!el) return;
+  const boxes = [...pane.querySelectorAll(".filter-site")];
+  el.innerHTML = sitePickHtml(boxes.length, boxes.filter(b => b.checked).length);
+  el.querySelectorAll("[data-pick]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const on = btn.dataset.pick === "all";
+      boxes.forEach(b => { b.checked = on; });
+      refreshSitePick(pane);
+    });
+  });
+}
+
 function bindCtFilter(pane, ctId) {
   const btn = pane.querySelector("#ct-filter-btn");
   const panel = pane.querySelector("#ct-filter-panel");
@@ -1545,6 +1571,10 @@ function bindCtFilter(pane, ctId) {
   });
   panel.addEventListener("click", ev => ev.stopPropagation());
   document.addEventListener("click", close);
+
+  refreshSitePick(pane);
+  pane.querySelectorAll(".filter-site").forEach(box =>
+    box.addEventListener("change", () => refreshSitePick(pane)));
 
   pane.querySelector("#filter-apply").addEventListener("click", () => {
     _ctFilter = {

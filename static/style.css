@@ -1022,6 +1022,26 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
 }
 .filter-panel.open { display: block; }
 .filter-panel .add-field { margin-bottom: 10px; }
+.filter-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.filter-pick { display: flex; align-items: baseline; gap: 6px; }
+.filter-pick button {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--n-400);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.filter-pick button:hover { color: var(--text); }
+.filter-pick-sep { color: var(--n-600); font-size: 11px; }
+
 .filter-sites {
   max-height: 190px;
   overflow-y: auto;
@@ -1087,7 +1107,7 @@ a.ov-viewall { text-decoration: underline; }
 .ov-row {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;                 /* matches .link-row so the two line up */
   padding: 8px 10px;
   margin: 0 -10px;
   border-radius: var(--radius-sm);
@@ -1096,6 +1116,10 @@ a.ov-viewall { text-decoration: underline; }
   cursor: pointer;
 }
 .ov-row:hover { background: var(--surface2); }
+.ov-row .row-menu-wrap { opacity: 0; transition: opacity 0.12s; }
+.ov-row:hover .row-menu-wrap,
+.ov-row .row-menu-wrap:has(.row-menu.open) { opacity: 1; }
+.ov-row .row-overflow { opacity: 1; }
 .ov-title {
   flex: 1;
   min-width: 0;

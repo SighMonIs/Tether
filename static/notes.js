@@ -488,6 +488,19 @@ async function renderCategoryOverview() {
         html: `<div class="ov-row" data-note="${n.id}">
                  <span class="ov-title">${escHtml(n.title || "Untitled")}</span>
                  <span class="ov-date">${window.friendlyDate(n.updated_at)}</span>
+                 <div class="row-menu-wrap">
+                   <button class="row-overflow" type="button" title="More">
+                     <i data-lucide="ellipsis-vertical"></i>
+                   </button>
+                   <div class="row-menu">
+                     <button type="button" class="row-menu-item" data-note-action="category" data-id="${n.id}">
+                       <i data-lucide="tag"></i> Change category
+                     </button>
+                     <button type="button" class="row-menu-item danger" data-note-action="delete" data-id="${n.id}">
+                       <i data-lucide="trash-2"></i> Delete
+                     </button>
+                   </div>
+                 </div>
                </div>`, at: n.updated_at })),
     ].sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 5);
     const body = rows.map(r => r.html).join("")
@@ -503,6 +516,20 @@ async function renderCategoryOverview() {
   pane.innerHTML = blocks.join("");
   pane.querySelectorAll("[data-note]").forEach(row => {
     row.addEventListener("click", () => openNote(row.dataset.note));
+  });
+  // the menu sits inside the row, so keep its clicks from opening the note
+  pane.querySelectorAll(".ov-row .row-menu-wrap").forEach(wrap => {
+    wrap.addEventListener("click", ev => ev.stopPropagation());
+  });
+  pane.querySelectorAll(".ov-row .row-overflow").forEach(btn => {
+    btn.addEventListener("click", () => window.toggleRowMenu?.(btn));
+  });
+  pane.querySelectorAll(".ov-row [data-note-action]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      window.closeRowMenus?.();
+      if (btn.dataset.noteAction === "category") window.openNoteCategory?.(btn.dataset.id);
+      else window.deleteNoteById?.(btn.dataset.id);
+    });
   });
   window.bindLinkRowMenus?.(pane);
   if (window.lucide) lucide.createIcons();
