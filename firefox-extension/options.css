@@ -1,15 +1,21 @@
+/* Nocturne — mirrors static/style.css; keep the two in step */
 :root {
-  --accent:   #6366f1;
-  --accent-h: #4f52d9;
-  --bg:       #0f0f12;
-  --surface:  #1a1a22;
-  --surface2: #22222e;
-  --border:   #2a2a38;
-  --text:     #e8e8f0;
-  --subtext:  #888899;
-  --danger:   #ef4444;
-  --success:  #10b981;
+  --n-100: #ededed;
+  --n-300: #a3a3a3;
+  --n-400: #8a8a8a;
+  --n-500: #6e6e6e;
+  --n-600: #575757;
+  --n-700: #3a3a3a;
+  --n-800: #2b2b2b;
+  --bg:       #1d1d1d;
+  --surface:  #171717;
+  --surface2: var(--n-800);
+  --border:   #262626;
+  --text:     #f2f2f2;
+  --subtext:  var(--n-400);
+  --danger:   #d98b8b;
   --radius:   10px;
+  --radius-sm: 8px;
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
@@ -17,8 +23,8 @@
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
-  font-size: 0.9rem;
+  font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
   min-height: 100vh;
   display: flex;
   justify-content: center;
@@ -37,19 +43,9 @@ body {
   margin-bottom: 1.5rem;
 }
 
-.logo {
-  width: 28px;
-  height: 28px;
-  background: var(--accent);
-  border-radius: 7px;
-  padding: 4px;
-  flex-shrink: 0;
-}
+.logo { width: 20px; height: 20px; flex-shrink: 0; }
 
-h1 {
-  font-size: 1.15rem;
-  font-weight: 600;
-}
+h1 { font-size: 15px; font-weight: 500; letter-spacing: .01em; }
 
 .card {
   background: var(--surface);
@@ -59,8 +55,8 @@ h1 {
 }
 
 h2 {
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 15px;
+  font-weight: 500;
   margin-bottom: 0.35rem;
 }
 
@@ -76,10 +72,11 @@ h2 {
 
 .field label {
   display: block;
-  font-size: 0.82rem;
+  font-size: 11px;
   color: var(--subtext);
-  font-weight: 500;
-  margin-bottom: 0.35rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 0.4rem;
 }
 
 input[type="url"],
@@ -89,13 +86,13 @@ input[type="text"] {
   padding: 0.5rem 0.7rem;
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   color: var(--text);
-  font-size: 0.875rem;
+  font-size: 0.9rem;
   outline: none;
   transition: border-color 0.15s;
 }
-input:focus { border-color: var(--accent); }
+input:focus { border-color: var(--n-500); }
 input::placeholder { color: var(--subtext); }
 
 .input-row {
@@ -108,7 +105,7 @@ input::placeholder { color: var(--subtext); }
 .icon-btn {
   background: var(--surface2);
   border: 1px solid var(--border);
-  border-radius: 7px;
+  border-radius: var(--radius-sm);
   color: var(--subtext);
   cursor: pointer;
   padding: 0 0.6rem;
@@ -134,36 +131,37 @@ input::placeholder { color: var(--subtext); }
 }
 
 .btn-primary {
-  padding: 0.5rem 1.1rem;
-  background: var(--accent);
-  color: white;
-  border: none;
-  border-radius: 7px;
-  font-size: 0.875rem;
+  padding: 6px 14px;
+  background: var(--surface2);
+  color: var(--n-100);
+  border: 1px solid var(--n-600);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
   font-weight: 500;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
 }
-.btn-primary:hover { background: var(--accent-h); }
+.btn-primary:hover { background: var(--n-700); border-color: var(--n-500); }
 
 .btn-ghost {
-  padding: 0.5rem 1rem;
+  padding: 6px 14px;
   background: none;
   color: var(--subtext);
   border: 1px solid var(--border);
-  border-radius: 7px;
-  font-size: 0.875rem;
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
   cursor: pointer;
   transition: color 0.15s, border-color 0.15s;
 }
-.btn-ghost:hover { color: var(--text); border-color: var(--subtext); }
+.btn-ghost:hover { color: var(--text); border-color: var(--n-500); }
 
 .status {
   margin-top: 0.75rem;
   padding: 0.5rem 0.7rem;
-  border-radius: 7px;
-  font-size: 0.82rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  color: var(--subtext);
 }
-.status.success { background: rgba(16,185,129,0.15); color: var(--success); }
-.status.error   { background: rgba(239,68,68,0.15);  color: var(--danger); }
-.status.info    { background: rgba(99,102,241,0.15); color: var(--accent); }
+.status.success { color: var(--n-100); }
+.status.error   { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }

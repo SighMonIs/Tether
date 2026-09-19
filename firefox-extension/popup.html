@@ -8,9 +8,8 @@
 </head>
 <body>
   <div class="header">
-    <svg class="logo" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-      <path d="M12 4 L12 20 M7 8 L12 4 L17 8" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      <circle cx="12" cy="20" r="2" fill="white"/>
+    <svg class="logo" viewBox="0 0 24 24" fill="none" stroke="#a3a3a3" stroke-width="1.8">
+      <circle cx="6" cy="12" r="3"/><circle cx="18" cy="12" r="3"/><line x1="9" y1="12" x2="15" y2="12"/>
     </svg>
     <span class="logo-text">Tether</span>
     <button class="settings-btn" id="open-settings" title="Settings">
@@ -25,32 +24,36 @@
     <button class="btn-primary" id="go-settings">Open Settings</button>
   </div>
 
-  <div id="main" style="display:none">
+  <form id="main" style="display:none">
     <div class="url-row">
       <img id="favicon" class="favicon" src="" alt="" style="display:none">
       <span id="page-url" class="page-url"></span>
     </div>
 
     <div class="field">
-      <label class="field-label">Tags</label>
-      <div class="tag-input-wrap" id="tag-input-wrap">
-        <div id="selected-tags" class="selected-tags"></div>
-        <input
-          type="text"
-          id="tag-search"
-          class="tag-search"
-          placeholder="Add tags…"
-          autocomplete="off"
-          spellcheck="false"
-        >
-      </div>
-      <div id="tag-dropdown" class="tag-dropdown" style="display:none"></div>
+      <label class="field-label" for="title">Title</label>
+      <input type="text" id="title" class="input" placeholder="Page title" autocomplete="off">
     </div>
 
-    <button class="btn-primary save-btn" id="save-btn">Save link</button>
+    <div class="field">
+      <label class="field-label" for="desc">Description</label>
+      <textarea id="desc" class="input" rows="3" placeholder="What is this about?"></textarea>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="category">Category</label>
+      <select id="category" class="input"><option value="">No category</option></select>
+    </div>
+
+    <div class="field">
+      <label class="field-label" for="note">Note <span class="optional">(optional)</span></label>
+      <textarea id="note" class="input" rows="3" placeholder="Add a note about this link…"></textarea>
+    </div>
+
+    <button type="submit" class="btn-primary save-btn" id="save-btn">Save</button>
 
     <div id="status" class="status" style="display:none"></div>
-  </div>
+  </form>
 
   <script src="popup.js"></script>
 </body>
