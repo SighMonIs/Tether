@@ -1507,6 +1507,8 @@ a.ov-viewall { text-decoration: underline; }
 .settings-steps li { line-height: 1.5; }
 .settings-steps a { color: var(--n-200); }
 .settings-steps code { background: var(--surface2); padding: 0.1em 0.35em; border-radius: 4px; font-size: 0.82em; }
+.icon-btn-inline { display: inline-flex; vertical-align: middle; padding: 2px; margin-left: 0.15rem; }
+.icon-btn-inline svg { width: 13px; height: 13px; }
 
 .error-log { margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; max-height: 280px; overflow-y: auto; scrollbar-width: thin; }
 .error-entry { background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 0.55rem 0.75rem; font-size: 0.8rem; display: grid; grid-template-columns: auto 1fr; gap: 0.15rem 0.75rem; }

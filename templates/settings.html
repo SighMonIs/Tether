@@ -91,7 +91,7 @@
           <p>This UUID is embedded in your shortcut and authenticates all requests. Keep it private.</p>
           <div class="uuid-display">
             <code id="uuid-text">{{ api_uuid }}</code>
-            <button class="icon-btn" onclick="copyUUID()" title="Copy">
+            <button class="icon-btn" onclick="copyText('uuid-text')" title="Copy">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </button>
           </div>
@@ -127,7 +127,7 @@
           <dl class="info-list">
             <dt>Local IP</dt><dd><code>{{ local_ip }}</code></dd>
             <dt>Port</dt><dd><code>5225</code></dd>
-            <dt>API base</dt><dd><code>http://{{ local_ip }}:5225/api</code></dd>
+            <dt>API base</dt><dd><code>{{ local_ip }}/api</code></dd>
           </dl>
         </section>
 
@@ -143,18 +143,25 @@
           <p>Save links to Tether directly from Firefox. Click the extension icon on any page to save the URL and assign tags.</p>
           <ol class="settings-steps">
             <li>Download the extension folder from your server or copy <code>firefox-extension/</code> from the Tether repo to your computer.</li>
-            <li>Open Firefox and go to <code>about:debugging#/runtime/this-firefox</code>.</li>
+            <li>Open Firefox and go to <code>about:debugging#/runtime/this-firefox</code> <button class="icon-btn icon-btn-inline" onclick="copyText('ext-debug-url')" title="Copy URL"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button><span id="ext-debug-url" hidden>about:debugging#/runtime/this-firefox</span></li>
             <li>Click <strong>Load Temporary Add-on</strong> and select the <code>manifest.json</code> file inside the extension folder.</li>
             <li>The Tether icon will appear in your toolbar. Click it and open <strong>Settings</strong>.</li>
             <li>Enter your server URL and the API key shown below, then click <strong>Test connection</strong>.</li>
           </ol>
-          <div class="uuid-display" style="margin-top:1rem">
-            <code id="ext-uuid-text">{{ api_uuid }}</code>
-            <button class="icon-btn" onclick="copyExtUUID()" title="Copy API key">
+          <p class="hint" style="margin-top:1rem">Server URL</p>
+          <div class="uuid-display" style="margin-top:0.25rem">
+            <code id="ext-server-url">{{ local_ip }}</code>
+            <button class="icon-btn" onclick="copyText('ext-server-url')" title="Copy server URL">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
             </button>
           </div>
-          <p class="hint" style="margin-top:0.5rem">Server URL: <code>http://{{ local_ip }}:5225</code></p>
+          <p class="hint" style="margin-top:0.5rem">API key</p>
+          <div class="uuid-display" style="margin-top:0.25rem">
+            <code id="ext-uuid-text">{{ api_uuid }}</code>
+            <button class="icon-btn" onclick="copyText('ext-uuid-text')" title="Copy API key">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+            </button>
+          </div>
         </section>
 
         <section class="settings-card" id="shortcut">

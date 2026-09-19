@@ -564,13 +564,8 @@ async function importData(input) {
   input.value = "";
 }
 
-function copyUUID() {
-  const text = document.getElementById("uuid-text")?.textContent;
-  if (text) navigator.clipboard.writeText(text).then(() => toast("Copied!"));
-}
-
-function copyExtUUID() {
-  const text = document.getElementById("ext-uuid-text")?.textContent;
+function copyText(id) {
+  const text = document.getElementById(id)?.textContent.trim();
   if (text) navigator.clipboard.writeText(text).then(() => toast("Copied!"));
 }
 
