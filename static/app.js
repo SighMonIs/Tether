@@ -566,7 +566,26 @@ async function importData(input) {
 
 function copyText(id) {
   const text = document.getElementById(id)?.textContent.trim();
-  if (text) navigator.clipboard.writeText(text).then(() => toast("Copied!"));
+  if (!text) return;
+  // navigator.clipboard only exists on HTTPS/localhost; the LAN address is plain HTTP
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(text).then(() => toast("Copied!")).catch(() => execCopy(text));
+  } else {
+    execCopy(text);
+  }
+}
+
+function execCopy(text) {
+  const el = document.createElement("textarea");
+  el.value = text;
+  el.style.cssText = "position:fixed;top:0;left:0;width:2em;height:2em;opacity:0;";
+  document.body.appendChild(el);
+  el.focus();
+  el.select();
+  let ok = false;
+  try { ok = document.execCommand("copy"); } catch {}
+  el.remove();
+  toast(ok ? "Copied!" : "Copy failed");
 }
 
 function confirmRegenerate() {
