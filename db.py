@@ -131,6 +131,7 @@ def init_db():
         NOTES_DIR.mkdir(parents=True, exist_ok=True)
         _migrate_to_content_types(conn)
         _drop_unused_kinds(conn)
+        _collapse_extra_content_types(conn)
         _drop_read_columns(conn)
         _file_orphan_notes(conn)
         _add_tag_position(conn)
@@ -268,6 +269,25 @@ def _drop_unused_kinds(conn):
     """).fetchall()
     for row in empty_folders:
         conn.execute("DELETE FROM content_types WHERE id=?", (row["id"],))
+
+
+def _collapse_extra_content_types(conn):
+    """Categories used to allow user-named sections; now each holds exactly one
+    Links and one Notes bucket. Fold any extra section's items into the
+    category's first bucket of that kind, then drop it — nothing is lost."""
+    for kind, table in (("links", "link_content_types"), ("notes", "note_content_types")):
+        extras = conn.execute(f"""
+            SELECT id, tag_id FROM content_types ct WHERE kind=?
+            AND id != (SELECT id FROM content_types WHERE tag_id=ct.tag_id AND kind=ct.kind
+                       ORDER BY position, id LIMIT 1)
+        """, (kind,)).fetchall()
+        for extra in extras:
+            keep = conn.execute(
+                "SELECT id FROM content_types WHERE tag_id=? AND kind=? ORDER BY position, id LIMIT 1",
+                (extra["tag_id"], kind),
+            ).fetchone()["id"]
+            conn.execute(f"UPDATE OR IGNORE {table} SET content_type_id=? WHERE content_type_id=?", (keep, extra["id"]))
+            conn.execute("DELETE FROM content_types WHERE id=?", (extra["id"],))
 
 
 def _ensure_link_tags_view(conn):
