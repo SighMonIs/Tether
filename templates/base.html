@@ -127,7 +127,8 @@
         </div>
         <div class="form-group">
           <label for="quick-add-category">Category</label>
-          <select id="quick-add-category" class="edit-tag-select"></select>
+          <select id="quick-add-category" class="edit-tag-select" onchange="toggleQuickAddNewCat()"></select>
+          <input type="text" id="quick-add-new-cat" placeholder="New category name" autocomplete="off" style="display:none;margin-top:0.5rem">
         </div>
         <div class="form-group">
           <label for="quick-add-note">Note <span class="form-note" style="text-transform:none;letter-spacing:normal;font-weight:400">(optional)</span></label>

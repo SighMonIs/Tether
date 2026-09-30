@@ -631,10 +631,22 @@ async function openQuickAdd(url) {
   document.getElementById("quick-add-title").value = meta.title || getDomain(url);
   document.getElementById("quick-add-desc").value = meta.description || "";
   document.getElementById("quick-add-url").textContent = url;
-  fillCategorySelect(document.getElementById("quick-add-category"), "");
+  const catSelect = document.getElementById("quick-add-category");
+  fillCategorySelect(catSelect, "");
+  catSelect.insertAdjacentHTML("beforeend", `<option value="__new__">+ New category…</option>`);
+  document.getElementById("quick-add-new-cat").value = "";
+  toggleQuickAddNewCat();
 
   document.getElementById("quick-add-loading").style.display = "none";
   document.getElementById("quick-add-form").style.display = "flex";
+}
+
+function toggleQuickAddNewCat() {
+  const isNew = document.getElementById("quick-add-category").value === "__new__";
+  const input = document.getElementById("quick-add-new-cat");
+  input.style.display = isNew ? "" : "none";
+  input.required = isNew;
+  if (isNew) input.focus();
 }
 
 function quickAddCategory() {
@@ -648,6 +660,26 @@ async function submitQuickAdd(e) {
   // e.submitter is absent when the form is submitted other than by its button
   const btn = e.submitter || e.target.querySelector('button[type="submit"]');
   if (btn) { btn.disabled = true; btn.textContent = "Saving…"; }
+
+  // create the new category first so the link and its note both land in it
+  const catSelect = document.getElementById("quick-add-category");
+  if (catSelect.value === "__new__") {
+    const tagRes = await fetch("/api/tags", {
+      method: "POST",
+      headers: headers(),
+      body: JSON.stringify({ name: document.getElementById("quick-add-new-cat").value.trim() }),
+    });
+    if (!tagRes.ok) {
+      toast("Failed to create category");
+      if (btn) { btn.disabled = false; btn.textContent = "Save"; }
+      return;
+    }
+    const tag = await tagRes.json();
+    if (!_sidebarTags.some(t => t.id === tag.id)) _sidebarTags.push(tag);
+    catSelect.insertAdjacentHTML("afterbegin", `<option value="${tag.id}">${escHtml(tag.name)}</option>`);
+    catSelect.value = tag.id;
+    toggleQuickAddNewCat();
+  }
 
   const res = await fetch("/api/links", {
     method: "POST",
