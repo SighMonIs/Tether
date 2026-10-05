@@ -25,13 +25,8 @@
           <button class="toggle-btn" data-cmd="link" title="Link"><i data-lucide="link"></i></button>
         </div>
 
-        <div class="feed-scroll" id="notes-list-view" style="display:none">
-          <div class="notes-list-pane">
-            <button type="button" class="notes-new-btn" id="notes-new-btn">
-              <i data-lucide="plus"></i> New note
-            </button>
-            <div class="notes-list" id="notes-list"></div>
-          </div>
+        <div class="feed-scroll" id="notes-empty-view" style="display:none">
+          <div class="empty-state">Pick a note from the sidebar, or use + to start a new one.</div>
         </div>
 
         <div class="notes-editor-scroll" id="note-editor-view" style="display:none">
@@ -104,6 +99,22 @@
   </div>
 </dialog>
 
+<dialog id="new-note-modal" class="modal">
+  <div class="modal-content">
+    <h2>New note</h2>
+    <form id="new-note-form">
+      <div class="form-group">
+        <label for="new-note-tag">Tag</label>
+        <select id="new-note-tag" class="edit-tag-select"></select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" onclick="document.getElementById('new-note-modal').close()">Cancel</button>
+        <button type="submit" class="btn-primary">Create</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
 <dialog id="note-category-modal" class="modal">
   <div class="modal-content">
     <h2>Change tag</h2>
@@ -123,5 +134,5 @@
 </dialog>
 {% endblock %}
 {% block scripts %}
-<script type="module" src="/static/notes.js?v=105"></script>
+<script type="module" src="/static/notes.js?v=108"></script>
 {% endblock %}

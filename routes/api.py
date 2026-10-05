@@ -561,6 +561,40 @@ def search_links(q: str, x_tether_uuid: str | None = Header(default=None)):
         return _link_rows(conn, rows)
 
 
+@router.get("/search")
+def search_all(q: str, x_tether_uuid: str | None = Header(default=None)):
+    """The top bar's search: links by title/url/description, notes by title or text,
+    wherever the user happens to be. Substring match, so partial words find things."""
+    _check_auth(x_tether_uuid)
+    needle = q.strip()
+    if not needle:
+        return {"links": [], "notes": []}
+    like = "%" + needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+    with db() as conn:
+        links = [dict(r) for r in conn.execute(
+            "SELECT l.id, l.url, l.title, l.favicon_url, t.name AS tag_name FROM links l "
+            "LEFT JOIN link_tags lt ON lt.link_id=l.id LEFT JOIN tags t ON t.id=lt.tag_id "
+            "WHERE l.title LIKE ?1 ESCAPE '\\' OR l.url LIKE ?1 ESCAPE '\\' "
+            "OR l.description LIKE ?1 ESCAPE '\\' "
+            "ORDER BY l.created_at DESC LIMIT 20", (like,)).fetchall()]
+        paths = tag_paths(conn, "notes")
+        notes = []
+        # ponytail: reads every note file per search; fine for hundreds of notes,
+        # move note text into an FTS table if it ever gets slow
+        for n in _note_dicts(conn, conn.execute(f"{_NOTE_SELECT} ORDER BY n.updated_at DESC").fetchall()):
+            path = NOTES_DIR / f"{n['id']}.md"
+            body = path.read_text(encoding="utf-8") if path.exists() else ""
+            if needle.lower() not in f"{n['title']}\n{body}".lower():
+                continue
+            tag = paths.get(n["tag_id"]) if n["tag_id"] else "untagged"
+            notes.append({"id": n["id"], "title": n["title"], "tag_id": n["tag_id"],
+                          "tag_name": n["tag"]["name"] if n["tag"] else None,
+                          "path": f"/note/{tag}/{n['slug']}"})
+            if len(notes) == 20:
+                break
+    return {"links": links, "notes": notes}
+
+
 _CLEANUP_UNITS = {"days", "weeks", "months", "years"}
 
 

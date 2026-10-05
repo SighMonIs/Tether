@@ -21,7 +21,6 @@ function escHtml(s) {
   return (s || "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
-const listEl = document.getElementById("notes-list");
 const titleInput = document.getElementById("note-title-input");
 const editorMount = document.getElementById("note-editor");
 const statusEl = document.getElementById("notes-save-status");
@@ -35,7 +34,8 @@ const categoryForm = document.getElementById("note-category-form");
 const urlParams = new URLSearchParams(location.search);
 
 const ctView = document.getElementById("ct-view");
-const notesListView = document.getElementById("notes-list-view");
+// shown when nothing is open: the notes themselves live in the sidebar
+const notesEmptyView = document.getElementById("notes-empty-view");
 const noteView = document.getElementById("note-editor-view");
 const linksView = document.getElementById("links-view");
 
@@ -44,28 +44,15 @@ const VIEW = window.TETHER_VIEW || { tag: null, uncategorised: false, type: "all
 let currentView = "links";  // "links" | "notes" | "ct" | "editor"
 let currentCtId = VIEW.ct ? String(VIEW.ct) : null;
 
-let noteQuery = "";
-const searchInput = document.getElementById("search-input");
-if (searchInput) {
-  searchInput.addEventListener("input", () => {
-    noteQuery = searchInput.value.trim().toLowerCase();
-    renderList();
-  });
-}
-
 function setView(v, persist = true) {
   currentView = v;
   const editing = v === "editor";
   noteView.style.display = editing ? "" : "none";
   if (ctView) ctView.style.display = v === "ct" ? "" : "none";
-  notesListView.style.display = v === "notes" ? "" : "none";
+  notesEmptyView.style.display = v === "notes" ? "" : "none";
   linksView.style.display = v === "links" ? "" : "none";
-  listEl.querySelectorAll(".notes-list-item").forEach(el => {
-    el.classList.toggle("active", editing && el.dataset.id === String(currentNoteId));
-  });
   if (!editing) { hideBubble(); hideLinkBar(); }
   if (!editing && v !== "ct") window.setSidebarNote?.(null);
-  if (v === "notes" || editing) renderList();
   if (v === "ct") window.renderContentTypeView?.(currentCtId);
 }
 
@@ -314,7 +301,6 @@ categoryForm.addEventListener("submit", async e => {
     if (idx !== -1) notesCache[idx] = note;
     // a note moved out of the tag on screen leaves its list
     if (filterTagId() && note.tag_id !== filterTagId()) notesCache = notesCache.filter(n => n.id !== note.id);
-    renderList();
     window.reloadSidebarNotes?.();
   }
   categoryModal.close();
@@ -367,7 +353,6 @@ async function saveCurrentNote() {
       const note = await res.json();
       const idx = notesCache.findIndex(n => n.id === note.id);
       if (idx !== -1) notesCache[idx] = note;
-      renderList();
       window.reloadSidebarNotes?.();
       statusEl.textContent = "Saved";
     } else {
@@ -378,97 +363,10 @@ async function saveCurrentNote() {
   }
 }
 
-listEl.addEventListener("dragover", ev => {
-  ev.preventDefault();
-  const dragging = listEl.querySelector(".dragging");
-  if (!dragging) return;
-  const els = [...listEl.querySelectorAll(".notes-list-item:not(.dragging)")];
-  const after = els.reduce((closest, child) => {
-    const box = child.getBoundingClientRect();
-    const offset = ev.clientY - box.top - box.height / 2;
-    return offset < 0 && offset > closest.offset ? { offset, element: child } : closest;
-  }, { offset: -Infinity, element: null }).element;
-  if (after == null) listEl.appendChild(dragging);
-  else listEl.insertBefore(dragging, after);
-});
-
-function renderList() {
-  listEl.innerHTML = "";
-  const historyMode = !filterTagId() && !filterUncategorised();
-  let notes = historyMode
-    ? [...notesCache].sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
-    : notesCache;
-  if (noteQuery) notes = notes.filter(n => (n.title || "Untitled").toLowerCase().includes(noteQuery));
-  for (const note of notes) {
-    const item = document.createElement("div");
-    const isActive = note.id === currentNoteId && currentView === "editor";
-    item.className = "notes-list-item" + (isActive ? " active" : "");
-    item.dataset.id = note.id;
-    item.draggable = !historyMode;
-    item.tabIndex = 0;
-    item.setAttribute("role", "button");
-    item.innerHTML = `
-      <span class="sidebar-cat-dot" style="background:${note.tag ? escHtml(note.tag.color) : "var(--subtext)"};opacity:${note.tag ? 1 : 0.4}"></span>
-      <span class="notes-list-title">${escHtml(note.title || "Untitled")}</span>
-      <div class="row-menu-wrap">
-        <button class="row-overflow" title="More" type="button">
-          <i data-lucide="ellipsis-vertical"></i>
-        </button>
-        <div class="row-menu">
-          <button type="button" class="row-menu-item" data-action="category">
-            <i data-lucide="tag"></i> Change tag
-          </button>
-          <button type="button" class="row-menu-item danger" data-action="delete">
-            <i data-lucide="trash-2"></i> Delete
-          </button>
-        </div>
-      </div>
-    `;
-    item.addEventListener("click", () => openNote(note.id));
-    item.addEventListener("keydown", ev => {
-      if (ev.key === "Enter" || ev.key === " ") {
-        ev.preventDefault();
-        openNote(note.id);
-      }
-    });
-    item.querySelector(".row-overflow").addEventListener("click", ev => {
-      ev.stopPropagation();
-      toggleRowMenu(ev.currentTarget);
-    });
-    item.querySelector('[data-action="delete"]').addEventListener("click", ev => {
-      ev.stopPropagation();
-      closeRowMenus();
-      deleteNote(note.id);
-    });
-    item.querySelector('[data-action="category"]').addEventListener("click", ev => {
-      ev.stopPropagation();
-      closeRowMenus();
-      openCategoryModal(note.id);
-    });
-    item.addEventListener("dragstart", () => item.classList.add("dragging"));
-    item.addEventListener("dragend", () => {
-      item.classList.remove("dragging");
-      const order = [...listEl.children].map(el => el.dataset.id);
-      notesCache.sort((a, b) => order.indexOf(String(a.id)) - order.indexOf(String(b.id)));
-      fetch("/api/notes/reorder", {
-        method: "PATCH",
-        headers: authHeaders(),
-        body: JSON.stringify({ order }),
-      });
-    });
-    listEl.appendChild(item);
-  }
-  if (!notes.length) {
-    listEl.innerHTML = `<div class="empty-state">${noteQuery ? "No notes match that search." : "No notes yet."}</div>`;
-  }
-  if (window.lucide) lucide.createIcons();
-}
-
 async function openNote(id, switchTab = true) {
   if (switchTab) setView("editor");
   if (id === currentNoteId) {
     // already loaded, but the path may have moved on since
-    renderList();
     window.setSidebarNote?.(id, notesCache.find(n => n.id === id)?.slug);
     return true;
   }
@@ -487,28 +385,39 @@ async function openNote(id, switchTab = true) {
 
   statusEl.textContent = "";
   showCreated(note.created_at);
-  renderList();
   window.setSidebarNote?.(id, notesCache.find(n => n.id === id)?.slug);
   updateToolbarState();
   return true;
 }
 
-async function createNote() {
+// New note asks which tag it belongs in, defaulting to the one you're in
+const newNoteModal = document.getElementById("new-note-modal");
+const newNoteTag = document.getElementById("new-note-tag");
+
+function createNote() {
+  newNoteTag.innerHTML = categorySelect.innerHTML;   // the same Notes tags
+  newNoteTag.value = String(filterTagId() || 0);
+  newNoteModal.showModal();
+  setTimeout(() => newNoteTag.focus(), 50);
+}
+
+document.getElementById("new-note-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const tagId = Number(newNoteTag.value) || null;
   const res = await fetch("/api/notes", {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ title: "Untitled", tag_id: filterTagId() }),
+    body: JSON.stringify({ title: "Untitled", tag_id: tagId }),
   });
+  newNoteModal.close();
   if (!res.ok) return;
   const note = await res.json();
   notesCache.unshift(note);
   currentNoteId = null;
+  await window.showNoteTag?.(tagId);
   await openNote(note.id);
-  window.reloadSidebarNotes?.();
   titleInput.focus();
-}
-
-document.getElementById("notes-new-btn").addEventListener("click", () => createNote());
+});
 
 window.createNoteFromLink = async function(title, url, linkId) {
   const res = await fetch("/api/notes", {
@@ -544,8 +453,10 @@ async function deleteNote(id) {
     editor.commands.setContent("");
     setTimeout(() => { suppressDirty = false; }, 0);
     setView("notes");
+    // the path named the deleted note; drop it back to the note's tag
+    const parts = location.pathname.split("/");
+    if (parts.length > 3) history.replaceState({}, "", parts.slice(0, -1).join("/"));
   }
-  renderList();
   window.reloadSidebarNotes?.();
 }
 
@@ -561,11 +472,10 @@ async function loadNotes() {
   editor.commands.setContent("");
   setTimeout(() => { suppressDirty = false; }, 0);
   statusEl.textContent = "";
-  renderList();
   if (VIEW.note) { openNote(VIEW.note); return; }
 }
 
-// runs last: setView() calls renderList(), which reads the consts declared above
+// runs last, once the consts above are declared
 // the server already worked out which view the path means
 setView(["links", "notes", "ct"].includes(VIEW.type) ? VIEW.type : "links");
 

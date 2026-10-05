@@ -106,17 +106,12 @@ function toast(msg, duration = 2200) {
 }
 
 /* ── Fetch links ─────────────────────────────────────────── */
-async function fetchLinks(tag, uncat, query) {
-  let url;
-  if (query) {
-    url = `/api/links/search?q=${encodeURIComponent(query)}`;
-  } else {
-    url = "/api/links";
-    const params = new URLSearchParams();
-    if (tag) params.set("tag", tag);
-    if (uncat) params.set("uncategorised", "true");
-    if (params.size) url += "?" + params.toString();
-  }
+async function fetchLinks(tag, uncat) {
+  let url = "/api/links";
+  const params = new URLSearchParams();
+  if (tag) params.set("tag", tag);
+  if (uncat) params.set("uncategorised", "true");
+  if (params.size) url += "?" + params.toString();
   const res = await fetch(url, { headers: headers() });
   if (!res.ok) return [];
   return res.json();
@@ -125,8 +120,7 @@ async function fetchLinks(tag, uncat, query) {
 let _cachedLinks = [];
 
 async function loadLinks() {
-  const query = document.getElementById("search-input")?.value.trim();
-  _cachedLinks = await fetchLinks(currentTag, currentUncat, query);
+  _cachedLinks = await fetchLinks(currentTag, currentUncat);
   renderCurrentLinks();
 }
 
@@ -138,7 +132,7 @@ async function updateCounts() {
   const counts = document.getElementById("link-counts");
   if (!counts) return;
   try {
-    const all = await fetchLinks(currentTag, currentUncat, null);
+    const all = await fetchLinks(currentTag, currentUncat);
     counts.textContent = `${all.length} total`;
   } catch {}
 }
@@ -275,12 +269,61 @@ async function deleteLink(id) {
 }
 
 /* ── Search ──────────────────────────────────────────────── */
+// The top bar searches everything, wherever you are; results drop down under it
 function initSearch() {
   const input = document.getElementById("search-input");
   if (!input) return;
+  const panel = document.createElement("div");
+  panel.className = "search-results";
+  input.closest(".search-box").appendChild(panel);
+  let seq = 0;
+  const close = () => panel.classList.remove("open");
+
+  const section = (label, rows) => rows.length
+    ? `<div class="search-label">${label}</div>${rows.join("")}` : "";
+  async function run() {
+    const q = input.value.trim();
+    if (!q) { close(); return; }
+    const mine = ++seq;
+    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`, { headers: headers() });
+    if (mine !== seq) return;                     // a newer keystroke won
+    const { links, notes } = res.ok ? await res.json() : { links: [], notes: [] };
+    panel.innerHTML = (section("Links", links.map(l => `
+        <a class="search-row" href="${escHtml(l.url)}" target="_blank" rel="noopener">
+          <i data-lucide="link"></i>
+          <span class="search-title">${escHtml(l.title || getDomain(l.url))}</span>
+          <span class="search-meta">${escHtml(l.tag_name || getDomain(l.url))}</span>
+        </a>`)) +
+      section("Notes", notes.map(n => `
+        <a class="search-row" href="${escHtml(n.path)}" data-note="${n.id}" data-tag="${n.tag_id ?? ""}">
+          <i data-lucide="file-text"></i>
+          <span class="search-title">${escHtml(n.title || "Untitled")}</span>
+          <span class="search-meta">${escHtml(n.tag_name || "Untagged")}</span>
+        </a>`)))
+      || `<div class="search-empty">Nothing matches "${escHtml(q)}"</div>`;
+    panel.classList.add("open");
+    lucide.createIcons();
+  }
+
   input.addEventListener("input", () => {
     clearTimeout(searchTimeout);
-    searchTimeout = setTimeout(loadLinks, 300);
+    searchTimeout = setTimeout(run, 200);
+  });
+  input.addEventListener("focus", () => { if (input.value.trim()) run(); });
+  input.addEventListener("keydown", ev => {
+    if (ev.key === "Escape") { close(); input.blur(); }
+  });
+  document.addEventListener("click", ev => { if (!ev.target.closest(".search-box")) close(); });
+  panel.addEventListener("click", ev => {
+    const a = ev.target.closest("a[data-note]");
+    // a note opens in place when the Notes side is already on screen
+    if (!a || MODE !== "notes" || !window.openNoteById || ev.ctrlKey || ev.metaKey) return;
+    ev.preventDefault();
+    close();
+    setViewTag(a.dataset.tag);
+    openSidebarTag(a.dataset.tag);
+    if (location.pathname !== a.getAttribute("href")) history.pushState({}, "", a.getAttribute("href"));
+    window.openNoteById(a.dataset.note);
   });
 }
 
@@ -1117,6 +1160,25 @@ function toggleFold(key) {
   saveFoldState(folds);
   renderSidebar();
 }
+
+// open a tag (and its parent) in the Notes sidebar so the note in it shows
+function openSidebarTag(tagId) {
+  const f = foldState();
+  if (tagId === "") f.add("u");
+  else {
+    const t = _sidebarTags.find(x => String(x.id) === String(tagId));
+    if (t) { f.add(t.id); if (t.parent_id) f.add(t.parent_id); }
+  }
+  saveFoldState(f);
+}
+
+// a new note lands in a tag: point the page at it and open it in the sidebar
+window.showNoteTag = async tagId => {
+  const id = tagId ? String(tagId) : "";
+  setViewTag(id);
+  openSidebarTag(id);
+  await window.reloadSidebarNotes();
+};
 
 // tagId as the sidebar holds it: "" = Untagged, otherwise the id as a string
 function setViewTag(tagId) {
