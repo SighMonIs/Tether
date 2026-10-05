@@ -323,7 +323,7 @@ async function createTag(e) {
   const res = await fetch("/api/tags", {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ name, color }),
+    body: JSON.stringify({ name, color, kind: MODE }),
   });
   if (res.ok) {
     toast("Tag Created");
@@ -339,7 +339,7 @@ async function openTagDeleteModal(id, name) {
   document.getElementById("tag-delete-msg").textContent =
     `Deleting tag "${name}" is permanent, what would you like to do with the Links and Notes:`;
   const select = document.getElementById("tag-delete-select");
-  const res = await fetch("/api/tags", { headers: headers() });
+  const res = await fetch(`/api/tags?kind=${MODE}`, { headers: headers() });
   const tags = res.ok ? await res.json() : [];
   const moveOptions = `<option value="">Untagged</option>` + tags
     .filter(t => t.id !== id)
@@ -353,7 +353,7 @@ async function confirmTagDelete() {
   const id = _tagDeleteId;
   const value = document.getElementById("tag-delete-select").value;
   if (value === "purge") {
-    if (!await showConfirm("This permanently deletes every link and note in this category. This can't be undone.", "Delete everything")) return;
+    if (!await showConfirm("This permanently deletes every link and note in this tag. This can't be undone.", "Delete everything")) return;
     await fetch(`/api/tags/${id}/purge`, { method: "DELETE", headers: headers() });
   } else {
     await fetch(`/api/tags/${id}/reassign`, {
@@ -487,7 +487,7 @@ function updateExportScopeLabel() {
   const label = document.getElementById("export-scope");
   if (!label) return;
   const n = exportSelectedTags().length;
-  label.textContent = n ? `${n} categor${n === 1 ? "y" : "ies"} selected` : "All categories";
+  label.textContent = n ? `${n} tag${n === 1 ? "" : "s"} selected` : "All tags";
 }
 
 async function fillExportCategories() {
@@ -633,7 +633,7 @@ async function openQuickAdd(url) {
   document.getElementById("quick-add-url").textContent = url;
   const catSelect = document.getElementById("quick-add-category");
   fillCategorySelect(catSelect, "");
-  catSelect.insertAdjacentHTML("beforeend", `<option value="__new__">+ New category…</option>`);
+  catSelect.insertAdjacentHTML("beforeend", `<option value="__new__">+ New tag…</option>`);
   document.getElementById("quick-add-new-cat").value = "";
   toggleQuickAddNewCat();
 
@@ -670,7 +670,7 @@ async function submitQuickAdd(e) {
       body: JSON.stringify({ name: document.getElementById("quick-add-new-cat").value.trim() }),
     });
     if (!tagRes.ok) {
-      toast("Failed to create category");
+      toast("Failed to create tag");
       if (btn) { btn.disabled = false; btn.textContent = "Save"; }
       return;
     }
@@ -745,7 +745,7 @@ async function openNoteForLink(linkId, noteId) {
 // every category picker is a plain single select now
 function fillCategorySelect(el, selectedId) {
   if (!el) return;
-  el.innerHTML = `<option value="">No category</option>` +
+  el.innerHTML = `<option value="">No tag</option>` +
     _sidebarTags.map(t =>
       `<option value="${t.id}" ${String(t.id) === String(selectedId) ? "selected" : ""}>${escHtml(t.name)}</option>`
     ).join("");
@@ -797,10 +797,14 @@ let _addMode = "one";        // "one" | "many"
 let _addPanelMeta = {};      // favicon from the preview, carried to the save
 let _addPreviewSeq = 0;      // ignore previews that resolve out of order
 
-function openAddPanel() {
+// the panel drops down from whichever + opened it
+function openAddPanel(anchor = document.getElementById("topbar-add")) {
   const panel = document.getElementById("add-panel");
   if (!panel) return;
   panel.classList.add("open");
+  const r = anchor.getBoundingClientRect();
+  panel.style.top = `${r.bottom + 8}px`;
+  panel.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - panel.offsetWidth - 8))}px`;
   const sel = document.getElementById("add-panel-category");
   const current = VIEW.tag ? String(VIEW.tag) : null;
   sel.innerHTML = `<option value="">Untagged</option>` +
@@ -894,7 +898,6 @@ async function submitAddPanel(ev) {
   await loadSidebarCats();
   if (typeof loadLinks === "function") await loadLinks();
   if (VIEW.ct) renderContentTypeView(VIEW.ct);
-  else window.showCategoryOverview?.();
 }
 
 function initAddPanel() {
@@ -919,96 +922,54 @@ function initAddPanel() {
   url.addEventListener("paste", () => setTimeout(previewAddPanelUrl, 0));
 }
 
-/* ── Sidebar categories ──────────────────────────────────── */
-// Two states: the category list, and one category drilled down to its content
-// types. The drill is derived from the URL so a reload keeps you where you were.
+/* ── Tags sidebar ────────────────────────────────────────── */
+// A flat list of tags. The Category sidebar (Links / Notes) picks which of the
+// two each tag opens; the mode comes from the path the server resolved.
 let _sidebarTags = [];
 let _uncatCount = 0;
-let _drillId = null;   // null = list, "" = Untagged, otherwise a tag id (string)
-
-const KIND_ICON = { links: "link", notes: "file-text" };
-const KIND_LABEL = { links: "Links", notes: "Notes" };
-let _contentTypes = [];   // for the category currently drilled into
-let _ctNotes = {};        // notes keyed by their notes-kind content type id
-let _openNoteId = null;   // the note in the editor wins over the path's highlight
-let _activeCt = VIEW.ct ? String(VIEW.ct) : null;
-let _activeType = VIEW.type === "ct" ? "ct" : VIEW.type;
+let _sidebarNotes = [];                 // Notes tab only: every note, grouped under its tag
+let _openNoteId = VIEW.note || null;
+const MODE = ["notes", "editor"].includes(VIEW.type) ? "notes" : "links";
 
 /* ── Readable paths ──────────────────────────────────────── */
 // The server resolves the path into ids before the page loads; from then on the
 // front end builds the same paths back out of the slugs the API returns.
 
-function categorySlug(drillId) {
-  if (drillId === "") return "untagged";
-  const t = _sidebarTags.find(x => String(x.id) === String(drillId));
-  return t ? t.slug : "";
+const MODE_ROOT = MODE === "notes" ? "/note" : "/link";
+
+function tagPath(tagId) {
+  if (tagId === "") return "untagged";
+  const t = _sidebarTags.find(x => String(x.id) === String(tagId));
+  return t ? t.path : "";
 }
 
-function categoryPath(drillId, tail = "") {
-  const slug = categorySlug(drillId);
-  if (!slug) return "/";
-  return `/${slug}${tail}`;
+// tail is a note's slug, already prefixed with "/"
+function categoryPath(tagId, tail = "") {
+  const path = tagPath(tagId);
+  return path ? `${MODE_ROOT}/${path}${tail}` : MODE_ROOT;
 }
 
 function folderSvg(color) {
   return `<svg class="sidebar-cat-folder" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
 }
 
-function drillMeta(id) {
-  if (id === "") return { name: "Untagged", color: "var(--n-500)" };
-  const t = _sidebarTags.find(x => String(x.id) === String(id));
-  return t ? { name: t.name, color: t.color } : null;
+// the current tag, in categoryPath's terms: null = none, "" = Untagged
+function currentTagId() {
+  if (VIEW.uncategorised) return "";
+  return VIEW.tag ? String(VIEW.tag) : null;
 }
 
-function renderSidebar(slide) {
+function renderSidebar() {
   const ul = document.getElementById("sidebar-cats");
   if (!ul) return;
-  const back = document.getElementById("sidebar-back");
-  const title = document.getElementById("sidebar-cat-title");
-  const newCat = document.getElementById("sidebar-new-cat");
-  const newContent = document.getElementById("sidebar-new-content");
-  const meta = _drillId === null ? null : drillMeta(_drillId);
 
-  if (!meta) {
-    _drillId = null;
-    if (back) back.style.display = "none";
-    if (title) title.style.display = "none";
-    if (newCat) newCat.style.display = "";
-    if (newContent) newContent.style.display = "none";
-    renderCategoryList(ul);
-  } else {
-    if (back) back.style.display = "";
-    if (title) {
-      // the category itself is the default view — what "All" used to be
-      const onOverview = !_activeCt && _activeType === "all" && !_openNoteId;
-      title.style.display = "";
-      title.href = categoryPath(_drillId);
-      title.classList.toggle("active", onOverview);
-      title.innerHTML = folderSvg(escHtml(meta.color)) +
-        `<span>${escHtml(meta.name)}</span>`;
-    }
-    if (newCat) newCat.style.display = "none";
-    if (newContent) newContent.style.display = "";
-    renderContentTypes(ul, meta);
-  }
-  lucide.createIcons();
-
-  if (slide) {
-    ul.classList.remove("slide-from-right", "slide-from-left");
-    void ul.offsetWidth;                     // restart the animation
-    ul.classList.add(`slide-from-${slide}`);
-  }
-}
-
-function renderCategoryList(ul) {
   const activeTag = VIEW.tag ? String(VIEW.tag) : null;
-  const activeUncat = VIEW.uncategorised;
-
-  // navigating loads the category's overview; the sidebar lands drilled in
-  const row = (id, name, color, badge, menu) => `
-    <li ${id === "" ? "" : `data-order="${id}"`}>
+  // chevron is a parent's toggle; other top-level rows get a spacer so names line up
+  const row = (id, name, color, badge, menu, lead = "", cls = "") => `
+    <li ${id === "" ? "" : `data-order="${id}"`} class="${cls}">
+      ${lead}
       <a href="${categoryPath(id)}" ${id === "" ? "" : `data-cat="${id}"`}
-         class="sidebar-cat-link ${(id === "" ? activeUncat : activeTag === String(id)) ? "active" : ""}">
+         class="sidebar-cat-link ${!_openNoteId && (id === "" ? VIEW.uncategorised : activeTag === String(id)) ? "active" : ""}">
         ${folderSvg(color)}
         <span class="sidebar-cat-name">${name}</span>
         ${badge}
@@ -1022,20 +983,121 @@ function renderCategoryList(ul) {
       </div>` : ""}
     </li>`;
 
+  const menuItem = (action, id, icon, label, extra = "") => `
+    <button type="button" class="row-menu-item ${action === "delete" ? "danger" : ""}"
+            data-action="${action}" data-id="${id}" ${extra}>
+      <i data-lucide="${icon}"></i> ${label}
+    </button>`;
+
+  // a child whose parent is gone shows at the top level
+  const isTop = t => !t.parent_id || !_sidebarTags.some(p => p.id === t.parent_id);
+  const tops = _sidebarTags.filter(isTop);
+  const kidsOf = id => _sidebarTags.filter(t => !isTop(t) && t.parent_id === id);
+  const spacer = `<span class="tag-chevron-space"></span>`;
+
+  // Links: only parents fold, open by default. Notes: every tag folds over its
+  // notes, shut by default. Keys are tag ids, or "u" for Untagged.
+  const folds = foldState();
+  const isOpen = key => MODE === "notes" ? folds.has(key) : !folds.has(key);
+  const chevron = key => `
+    <button type="button" class="tag-chevron" data-toggle="${key}" title="${isOpen(key) ? "Collapse" : "Expand"}">
+      <i data-lucide="${isOpen(key) ? "chevron-down" : "chevron-right"}"></i>
+    </button>`;
+  const notesOf = key => {
+    if (MODE !== "notes") return "";
+    const deep = _sidebarTags.some(t => t.id === key && !isTop(t)) ? "deep" : "";
+    const tagId = key === "u" ? "" : key;
+    return _sidebarNotes
+      .filter(n => String(n.tag_id ?? "u") === String(key))
+      .map(n => `
+        <li class="sidebar-note ${deep}">
+          <a href="${categoryPath(tagId, `/${n.slug}`)}" data-note="${n.id}" data-tag="${tagId}"
+             class="sidebar-cat-link ${_openNoteId === n.id ? "active" : ""}">
+            <i data-lucide="${n.link_id ? "link" : "file-text"}"></i>
+            <span class="sidebar-cat-name">${escHtml(n.title || "Untitled")}</span>
+          </a>
+          <div class="row-menu-wrap">
+            <button class="row-overflow" type="button" title="More">
+              <i data-lucide="ellipsis-vertical"></i>
+            </button>
+            <div class="row-menu">
+              <button type="button" class="row-menu-item" data-note-action="tag" data-id="${n.id}" data-tag="${tagId}">
+                <i data-lucide="tag"></i> Change tag
+              </button>
+              <button type="button" class="row-menu-item danger" data-note-action="delete" data-id="${n.id}">
+                <i data-lucide="trash-2"></i> Delete
+              </button>
+            </div>
+          </div>
+        </li>`).join("")
+      || `<li class="sidebar-note sidebar-empty ${deep}">No notes</li>`;
+  };
+
+  const tagRow = (t, parentId, kids) => {
+    // nesting is one level deep, so a parent can't become a child itself
+    const above = tops[tops.indexOf(t) - 1];
+    const nest = parentId != null
+      ? menuItem("unnest", t.id, "corner-up-left", "Move out of parent")
+      : (above && !kids.length
+          ? menuItem("nest", t.id, "corner-down-right", "Child of above", `data-parent="${above.id}"`)
+          : "");
+    const lead = MODE === "notes" || kids.length ? chevron(t.id) : spacer;
+    return row(t.id, escHtml(t.name), escHtml(t.color), "",
+      menuItem("rename", t.id, "square-pen", "Edit") + nest +
+      menuItem("export", t.id, "download", "Export data") +
+      menuItem("delete", t.id, "trash-2", "Delete"),
+      lead, parentId != null ? "tag-child" : "");
+  };
+
+  // ponytail: the badge counts untagged links only, so in Notes the row always shows
+  const showUncat = MODE === "notes" || _uncatCount > 0;
+  const withNotes = (key, html) => html + (isOpen(key) ? notesOf(key) : "");
   ul.innerHTML =
-    (_uncatCount > 0
-      ? row("", "Untagged", "var(--n-500)", `<span class="sidebar-cat-badge">${_uncatCount}</span>`, "")
+    (showUncat
+      ? withNotes("u", row("", "Untagged", "var(--n-500)",
+            MODE === "links" ? `<span class="sidebar-cat-badge">${_uncatCount}</span>` : "", "",
+            MODE === "notes" ? chevron("u") : spacer))
       : "") +
-    _sidebarTags.map(t => row(t.id, escHtml(t.name), escHtml(t.color), "", `
-      <button type="button" class="row-menu-item" data-action="rename" data-id="${t.id}">
-        <i data-lucide="square-pen"></i> Edit
-      </button>
-      <button type="button" class="row-menu-item" data-action="export" data-id="${t.id}">
-        <i data-lucide="download"></i> Export data
-      </button>
-      <button type="button" class="row-menu-item danger" data-action="delete" data-id="${t.id}">
-        <i data-lucide="trash-2"></i> Delete
-      </button>`)).join("");
+    tops.map(t => {
+      const kids = kidsOf(t.id);
+      if (!isOpen(t.id)) return tagRow(t, null, kids);
+      // child tags first, like folders above files
+      return tagRow(t, null, kids) +
+        kids.map(k => withNotes(k.id, tagRow(k, t.id, []))).join("") + notesOf(t.id);
+    }).join("");
+
+  ul.querySelectorAll("[data-toggle]").forEach(btn => {
+    btn.addEventListener("click", () => toggleFold(btn.dataset.toggle === "u" ? "u" : Number(btn.dataset.toggle)));
+  });
+  // a tag swaps the content area in place: Links shows its links, Notes just
+  // opens or closes the tag (its notes are right there in the sidebar)
+  ul.querySelectorAll("a.sidebar-cat-link:not([data-note])").forEach(a => {
+    a.addEventListener("click", ev => {
+      if (ev.ctrlKey || ev.metaKey || ev.shiftKey || !document.getElementById("links-container")) return;
+      ev.preventDefault();
+      const id = a.dataset.cat ?? "";
+      if (MODE === "notes") toggleFold(id === "" ? "u" : Number(id));
+      else showLinksTag(id, a.getAttribute("href"));
+    });
+  });
+  // the note menus need notes.js, which only the home page loads
+  ul.querySelectorAll("[data-note-action]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      closeRowMenus();
+      if (btn.dataset.noteAction === "tag") window.openNoteCategory?.(btn.dataset.id, btn.dataset.tag);
+      else window.deleteNoteById?.(btn.dataset.id);
+    });
+  });
+  // a note opens in the editor in place, whichever tag it's in
+  ul.querySelectorAll("[data-note]").forEach(a => {
+    a.addEventListener("click", ev => {
+      if (ev.ctrlKey || ev.metaKey || ev.shiftKey || !window.openNoteById) return;
+      ev.preventDefault();
+      setViewTag(a.dataset.tag);
+      if (location.pathname !== a.getAttribute("href")) history.pushState({}, "", a.getAttribute("href"));
+      window.openNoteById(a.dataset.note);
+    });
+  });
 
   bindRowMenus(ul);
   initListDrag(ul, "[data-cat]", "cat", async ids => {
@@ -1044,12 +1106,75 @@ function renderCategoryList(ul) {
       body: JSON.stringify({ order: ids.filter(Boolean).map(Number) }),
     });
     _sidebarTags.sort((a, b) => ids.indexOf(String(a.id)) - ids.indexOf(String(b.id)));
+    renderSidebar();
   });
+  lucide.createIcons();
+}
+
+function toggleFold(key) {
+  const folds = foldState();
+  folds.has(key) ? folds.delete(key) : folds.add(key);
+  saveFoldState(folds);
+  renderSidebar();
+}
+
+// tagId as the sidebar holds it: "" = Untagged, otherwise the id as a string
+function setViewTag(tagId) {
+  VIEW.tag = tagId === "" ? null : Number(tagId);
+  VIEW.uncategorised = tagId === "";
+  const t = _sidebarTags.find(x => String(x.id) === tagId);
+  setPageTitle(t ? t.name : "Untagged");
+}
+
+async function showLinksTag(tagId, href) {
+  setViewTag(tagId);
+  if (location.pathname !== href) history.pushState({}, "", href);
+  _openNoteId = null;
+  renderSidebar();
+  // a tag's links live in its links content type; Untagged has none, so it
+  // uses the plain filtered list
+  let ct = null;
+  if (tagId !== "") {
+    const res = await fetch(`/api/content-types?tag=${tagId}`, { headers: headers() });
+    ct = (res.ok ? await res.json() : []).find(c => c.kind === "links") || null;
+  }
+  VIEW.ct = ct ? ct.id : null;
+  VIEW.type = ct ? "ct" : "links";
+  if (ct) { window.showContentTypeView?.(String(ct.id)); return; }
+  currentTag = tagId === "" ? null : tagId;
+  currentUncat = tagId === "";
+  window.setShowingLinks?.(true);
+  await loadLinks();
+}
+
+// Links keeps the parents folded shut, Notes the tags opened up — a per-browser
+// convenience, so storage can fail
+const FOLD_KEY = MODE === "notes" ? "openNoteTags" : "collapsedTags";
+function foldState() {
+  try { return new Set(JSON.parse(localStorage.getItem(FOLD_KEY) || "[]")); }
+  catch { return new Set(); }
+}
+function saveFoldState(set) {
+  try { localStorage.setItem(FOLD_KEY, JSON.stringify([...set])); } catch {}
+}
+
+async function setTagParent(id, parentId) {
+  const res = await fetch(`/api/tags/${id}`, {
+    method: "PATCH", headers: headers(), body: JSON.stringify({ parent_id: parentId }),
+  });
+  if (!res.ok) { toast("Couldn't move that tag"); return; }
+  if (parentId != null) {
+    // open the parent so the tag doesn't vanish into a closed group
+    const f = foldState();
+    MODE === "notes" ? f.add(parentId) : f.delete(parentId);
+    saveFoldState(f);
+  }
+  await loadSidebarCats();
 }
 
 /* ── Drag to reorder ─────────────────────────────────────── */
 // Rows are dragged by their <li>; `sel` marks which rows take part, so the
-// Untagged row and the Notes heading stay put.
+// Untagged row stays put.
 function initListDrag(ul, sel, key, save) {
   const items = [...ul.querySelectorAll(sel)]
     .map(el => el.closest("li"))
@@ -1089,199 +1214,34 @@ function initListDrag(ul, sel, key, save) {
   });
 }
 
-function renderContentTypes(ul, meta) {
-  const activeCt = _activeCt;
-  const activeType = _activeType;
-  const rows = [];
-
-  // Untagged is the absence of a category, so it owns no content types — give it
-  // the same two rows backed by the built-in filtered views
-  if (_drillId === "") {
-    rows.push(`
-      <li>
-        <a href="${categoryPath(_drillId, "/links")}" class="sidebar-cat-link ${activeType === "links" ? "active" : ""}">
-          <i data-lucide="link"></i>
-          <span class="sidebar-cat-name">Links</span>
-        </a>
-      </li>
-      <li class="ct-heading"><span class="ct-heading-label">Notes</span></li>`);
-    const notes = _ctNotes.untagged || [];
-    rows.push(notes.length
-      ? notes.map(n => `
-        <li data-order="${n.id}">
-          <button type="button" class="sidebar-cat-link ct-note ${_openNoteId === n.id ? "active" : ""}"
-                  data-note="${n.id}" title="${n.link_id ? "Note on a saved link" : ""}">
-            <i data-lucide="${n.link_id ? "link" : "file-text"}"></i>
-            <span class="sidebar-cat-name">${escHtml(n.title || "Untitled")}</span>
-          </button>
-      <div class="row-menu-wrap">
-        <button class="row-overflow" type="button" title="More">
-          <i data-lucide="ellipsis-vertical"></i>
-        </button>
-        <div class="row-menu">
-          <button type="button" class="row-menu-item" data-note-action="category" data-id="${n.id}">
-            <i data-lucide="tag"></i> Change category
-          </button>
-          <button type="button" class="row-menu-item danger" data-note-action="delete" data-id="${n.id}">
-            <i data-lucide="trash-2"></i> Delete
-          </button>
-        </div>
-      </div>
-        </li>`).join("")
-      : `<li class="sidebar-empty">No notes yet.</li>`);
-  }
-
-  for (const ct of _contentTypes) {
-    if (ct.kind === "notes") {
-      // a heading rather than a link: its notes are listed right below it
-      rows.push(`
-        <li class="ct-heading">
-          <span class="ct-heading-label">${escHtml(ct.title)}</span>
-        </li>`);
-      const notes = _ctNotes[ct.id] || [];
-      if (!notes.length) {
-        rows.push(`<li class="sidebar-empty">No notes yet.</li>`);
-      } else {
-        for (const n of notes) {
-          rows.push(`
-            <li data-order="${n.id}">
-              <button type="button" class="sidebar-cat-link ct-note ${_openNoteId === n.id ? "active" : ""}"
-                      data-note="${n.id}" title="${n.link_id ? "Note on a saved link" : ""}">
-                <i data-lucide="${n.link_id ? "link" : "file-text"}"></i>
-                <span class="sidebar-cat-name">${escHtml(n.title || "Untitled")}</span>
-              </button>
-              <div class="row-menu-wrap">
-                <button class="row-overflow" type="button" title="More">
-                  <i data-lucide="ellipsis-vertical"></i>
-                </button>
-                <div class="row-menu">
-                  <button type="button" class="row-menu-item" data-note-action="category" data-id="${n.id}">
-                    <i data-lucide="tag"></i> Change category
-                  </button>
-                  <button type="button" class="row-menu-item danger" data-note-action="delete" data-id="${n.id}">
-                    <i data-lucide="trash-2"></i> Delete
-                  </button>
-                </div>
-              </div>
-            </li>`);
-        }
-      }
-    } else {
-      rows.push(`
-        <li>
-          <a href="${categoryPath(_drillId, ct.kind === "links" ? "/links" : "/notes")}" data-ct="${ct.id}"
-             class="sidebar-cat-link ${activeCt === String(ct.id) && !_openNoteId ? "active" : ""}">
-            <i data-lucide="${KIND_ICON[ct.kind] || "file"}"></i>
-            <span class="sidebar-cat-name">${escHtml(ct.title)}</span>
-            ${ct.count ? `<span class="sidebar-cat-badge">${ct.count}</span>` : ""}
-          </a>
-        </li>`);
-    }
-  }
-
-  ul.innerHTML = rows.join("");
-
-  ul.querySelectorAll(".row-overflow").forEach(btn => {
-    btn.addEventListener("click", () => toggleRowMenu(btn));
-  });
-  ul.querySelectorAll("[data-note]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      _openNoteId = btn.dataset.note;
-      markSidebarActive(null);
-      btn.classList.add("active");
-      window.openNoteById?.(btn.dataset.note);
-    });
-  });
-  initListDrag(ul, "[data-note]", "note", async ids => {
-    await fetch("/api/notes/reorder", {
-      method: "PATCH", headers: headers(), body: JSON.stringify({ order: ids }),
-    });
-  });
-  ul.querySelectorAll("[data-ct]").forEach(a => {
-    a.addEventListener("click", ev => {
-      ev.preventDefault();
-      goContentType(a.dataset.ct);
-    });
-  });
-  ul.querySelectorAll("[data-note-action]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      closeRowMenus();
-      if (btn.dataset.noteAction === "category") window.openNoteCategory?.(btn.dataset.id);
-      else window.deleteNoteById?.(btn.dataset.id);
-    });
-  });
-}
-
-/* ── In-place view switching ─────────────────────────────── */
-// ctId null means the category overview
+// the open note gets its own readable path when the page is scoped to a tag
 window.setSidebarNote = (noteId, slug) => {
-  _openNoteId = noteId || null;
-  if (noteId && slug && _drillId !== null) {
-    const path = categoryPath(_drillId, `/notes/${slug}`);
-    if (path !== "/" && location.pathname !== path) history.pushState({}, "", path);
+  if ((noteId || null) !== _openNoteId) {
+    _openNoteId = noteId || null;
+    renderSidebar();
   }
+  const tag = currentTagId();
+  if (!noteId || !slug || tag === null) return;
+  const path = categoryPath(tag, `/${slug}`);
+  if (location.pathname !== path) history.pushState({}, "", path);
+};
+
+// notes.js calls reloadSidebarNotes after a create, rename or delete
+async function loadSidebarNotes() {
+  if (MODE !== "notes") return;
+  try {
+    const res = await fetch("/api/notes", { headers: headers() });
+    _sidebarNotes = res.ok ? await res.json() : [];
+  } catch { _sidebarNotes = []; }
+}
+window.reloadSidebarNotes = async () => {
+  await loadSidebarNotes();
   renderSidebar();
 };
 
-function markSidebarActive(ctId) {
-  document.querySelectorAll("#sidebar-cats .sidebar-cat-link")
-    .forEach(el => el.classList.toggle("active", ctId != null && el.dataset.ct === String(ctId)));
-  document.getElementById("sidebar-cat-title")?.classList.toggle("active", ctId === "overview");
-}
-
-function goContentType(ctId) {
-  _openNoteId = null;
-  _activeCt = String(ctId);
-  _activeType = "ct";
-  const ct = _contentTypes.find(c => String(c.id) === String(ctId));
-  history.pushState({}, "", categoryPath(_drillId, ct && ct.kind === "notes" ? "/notes" : "/links"));
-  markSidebarActive(ctId);
-  window.showContentTypeView?.(ctId);
-}
-
-function goCategoryOverview() {
-  _openNoteId = null;
-  _activeCt = null;
-  _activeType = "all";
-  history.pushState({}, "", categoryPath(_drillId));
-  markSidebarActive("overview");
-  window.showCategoryOverview?.();
-}
-
-// keep browser back/forward working for those pushes
 // The path is resolved server-side, so let a real load handle back/forward
 // rather than duplicating that resolution here.
 window.addEventListener("popstate", () => location.reload());
-
-async function loadCtNotes() {
-  _ctNotes = {};
-  if (_drillId === "") {
-    try {
-      const res = await fetch("/api/notes?uncategorised=true", { headers: headers() });
-      _ctNotes.untagged = res.ok ? await res.json() : [];
-    } catch { _ctNotes.untagged = []; }
-    return;
-  }
-  await Promise.all(_contentTypes.filter(ct => ct.kind === "notes").map(async ct => {
-    try {
-      const res = await fetch(`/api/content-types/${ct.id}/items`, { headers: headers() });
-      _ctNotes[ct.id] = res.ok ? (await res.json()).notes : [];
-    } catch { _ctNotes[ct.id] = []; }
-  }));
-}
-window.reloadSidebarNotes = async () => {
-  if (_drillId === null) return;
-  await loadCtNotes();
-  renderSidebar();
-};
-
-async function loadContentTypes(drillId) {
-  if (drillId === null || drillId === "") { _contentTypes = []; return; }
-  try {
-    const res = await fetch(`/api/content-types?tag=${encodeURIComponent(drillId)}`, { headers: headers() });
-    _contentTypes = res.ok ? await res.json() : [];
-  } catch { _contentTypes = []; }
-}
 
 function bindRowMenus(ul) {
   ul.querySelectorAll(".row-overflow").forEach(btn => {
@@ -1292,6 +1252,18 @@ function bindRowMenus(ul) {
       closeRowMenus();
       const t = _sidebarTags.find(x => x.id === Number(btn.dataset.id));
       if (t) openEditTag(t.id, t.name, t.color);
+    });
+  });
+  ul.querySelectorAll('[data-action="nest"]').forEach(btn => {
+    btn.addEventListener("click", () => {
+      closeRowMenus();
+      setTagParent(Number(btn.dataset.id), Number(btn.dataset.parent));
+    });
+  });
+  ul.querySelectorAll('[data-action="unnest"]').forEach(btn => {
+    btn.addEventListener("click", () => {
+      closeRowMenus();
+      setTagParent(Number(btn.dataset.id), null);
     });
   });
   ul.querySelectorAll('[data-action="export"]').forEach(btn => {
@@ -1309,46 +1281,33 @@ function bindRowMenus(ul) {
   });
 }
 
-function initSidebarBack() {
-  const back = document.getElementById("sidebar-back");
-  if (back) {
-    back.addEventListener("click", () => {
-      _drillId = null;
-      renderSidebar("left");
-    });
-  }
-  const newContent = document.getElementById("sidebar-new-content");
-  if (newContent) newContent.addEventListener("click", () => window.createNoteInCategory?.());
-
-  const title = document.getElementById("sidebar-cat-title");
-  if (title) {
-    title.addEventListener("click", ev => {
-      ev.preventDefault();
-      goCategoryOverview();
-    });
-  }
-}
-
+let _sidebarLoaded = false;
 async function loadSidebarCats() {
   const ul = document.getElementById("sidebar-cats");
   if (!ul) return;
   try {
     const [tagsRes, uncatRes] = await Promise.all([
-      fetch("/api/tags", { headers: headers() }),
+      fetch(`/api/tags?kind=${MODE}`, { headers: headers() }),
       fetch("/api/links/uncategorised-count", { headers: headers() }),
     ]);
     if (!tagsRes.ok) return;
     _sidebarTags = await tagsRes.json();
-    _uncatCount = (uncatRes.ok ? await uncatRes.json() : {}).count || 0;
-
-    // land already drilled in when the page is scoped to one category
-    if (VIEW.uncategorised) _drillId = "";
-    else if (VIEW.tag) _drillId = String(VIEW.tag);
-    _openNoteId = VIEW.note || null;
-
-    await loadContentTypes(_drillId);
-    await loadCtNotes();
-    renderSidebar(_drillId === null ? undefined : "right");
+    // count is links + notes; the badge only sits on the Links side
+    _uncatCount = (uncatRes.ok ? await uncatRes.json() : {}).links || 0;
+    await loadSidebarNotes();
+    if (MODE === "notes" && !_sidebarLoaded) {
+      // land with the tag you're in (and its parent) opened up
+      const f = foldState();
+      const tag = currentTagId();
+      if (tag === "") f.add("u");
+      else if (tag !== null) {
+        const t = _sidebarTags.find(x => String(x.id) === tag);
+        if (t) { f.add(t.id); if (t.parent_id) f.add(t.parent_id); }
+      }
+      saveFoldState(f);
+    }
+    _sidebarLoaded = true;
+    renderSidebar();
   } catch {}
 }
 
@@ -1446,7 +1405,7 @@ function ctActionsMenu() {
           <i data-lucide="download"></i> Export selected
         </button>
         <button type="button" class="row-menu-item" data-bulk="category">
-          <i data-lucide="folder"></i> Change category
+          <i data-lucide="tag"></i> Change tag
         </button>
         <button type="button" class="row-menu-item danger" data-bulk="delete">
           <i data-lucide="trash-2"></i> Delete
@@ -1711,7 +1670,6 @@ document.addEventListener("DOMContentLoaded", () => {
   lucide.createIcons();
   loadSidebarCats();
   initSidebarResize();
-  initSidebarBack();
   initAddPanel();
 
   const addUrl = new URLSearchParams(location.search).get("add");
@@ -1726,7 +1684,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // scope the links list to whatever category the path resolved to
     if (VIEW.tag) {
       currentTag = String(VIEW.tag);
-      fetch("/api/tags", { headers: headers() })
+      fetch("/api/tags?kind=all", { headers: headers() })
         .then(r => r.json())
         .then(tags => {
           const tag = tags.find(t => String(t.id) === String(VIEW.tag));

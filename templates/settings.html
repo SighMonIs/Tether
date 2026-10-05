@@ -57,7 +57,7 @@
               {% for tag in tags %}
               <tr>
                 <td><span class="sidebar-cat-dot" style="background:{{ tag.color }}"></span></td>
-                <td class="tag-row-name">{{ tag.name }}</td>
+                <td class="tag-row-name">{{ tag.name }} <span class="row-date">· {{ tag.kind | capitalize }}</span></td>
                 <td class="row-date">{{ tag.link_count }} link{% if tag.link_count != 1 %}s{% endif %}</td>
                 <td class="row-date">{{ tag.note_count }} note{% if tag.note_count != 1 %}s{% endif %}</td>
                 <td class="row-actions">
@@ -255,7 +255,7 @@
     <h2>Export data</h2>
     <div class="export-scope">
       <div class="export-scope-head">
-        <span class="export-scope-label" id="export-scope">All categories</span>
+        <span class="export-scope-label" id="export-scope">All tags</span>
         <span class="export-scope-actions">
           <button type="button" onclick="toggleAllExportCats(true)">Select all</button>
           <button type="button" onclick="toggleAllExportCats(false)">Clear</button>

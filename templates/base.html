@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=106">
+  <link rel="stylesheet" href="/static/style.css?v=114">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <meta name="tether-uuid" content="{{ tether_uuid | default('') }}">
   <script>
@@ -63,7 +63,7 @@
           </div>
 
           <label class="add-field">
-            <span>Category</span>
+            <span>Tag</span>
             <select id="add-panel-category" class="edit-tag-select"></select>
           </label>
           <div class="add-actions">
@@ -75,7 +75,7 @@
     </div>
     <div class="topbar-search search-box">
       <i data-lucide="search"></i>
-      <input type="text" id="search-input" placeholder="Search links and notes…" autocomplete="off">
+      <input type="text" id="search-input" placeholder="Search" autocomplete="off">
     </div>
     {% endif %}
 
@@ -88,21 +88,44 @@
   </header>
 
   <div class="app-shell">
+  {% set mode = 'notes' if view and view.type in ('notes', 'editor') else ('links' if view else '') %}
+  <nav class="rail" aria-label="Category">
+    <a href="/link" class="rail-btn {% if mode == 'links' %}active{% endif %}" data-mode="links" title="Links">
+      <i data-lucide="link"></i>
+    </a>
+    <a href="/note" class="rail-btn {% if mode == 'notes' %}active{% endif %}" data-mode="notes" title="Notes">
+      <i data-lucide="file-text"></i>
+    </a>
+  </nav>
+
   <nav class="sidebar">
 
     {% block sidebar_nav %}
-    <button type="button" class="sidebar-back" id="sidebar-back" style="display:none">
-      <i data-lucide="arrow-left"></i>
-      <span>Back</span>
-    </button>
-    <a class="sidebar-cat-title" id="sidebar-cat-title" href="/" style="display:none"></a>
+    {% set mode = 'notes' if view and view.type in ('notes', 'editor') else 'links' %}
+    <div class="sidebar-head">
+      <span class="sidebar-head-title">{{ 'Notes' if mode == 'notes' else 'Links' }}</span>
+      <div class="row-menu-wrap">
+        <button type="button" class="row-overflow sidebar-head-add" title="Add" onclick="toggleRowMenu(this)">
+          <i data-lucide="plus"></i>
+        </button>
+        <div class="row-menu">
+          <button type="button" class="row-menu-item" onclick="closeRowMenus(); openNewTagModal()">
+            <i data-lucide="folder-plus"></i> New tag
+          </button>
+          {% if mode == 'notes' %}
+          <button type="button" class="row-menu-item" onclick="closeRowMenus(); window.createNoteInCategory?.()">
+            <i data-lucide="file-plus"></i> New note
+          </button>
+          {% else %}
+          <!-- the add panel closes on any outside click, so keep this one to ourselves -->
+          <button type="button" class="row-menu-item" onclick="event.stopPropagation(); closeRowMenus(); openAddPanel(this.closest('.row-menu-wrap'))">
+            <i data-lucide="link"></i> New link
+          </button>
+          {% endif %}
+        </div>
+      </div>
+    </div>
     <ul class="sidebar-cats" id="sidebar-cats"></ul>
-    <button type="button" class="sidebar-new-cat" id="sidebar-new-cat" onclick="openNewTagModal()">
-      <i data-lucide="plus"></i> New category
-    </button>
-    <button type="button" class="sidebar-new-cat" id="sidebar-new-content" style="display:none">
-      <i data-lucide="plus"></i> New Note
-    </button>
     {% endblock %}
 
     <div class="sidebar-resize-handle" id="sidebar-resize-handle"></div>
@@ -126,9 +149,9 @@
           <textarea id="quick-add-desc" class="import-textarea" rows="3" placeholder="What is this about?"></textarea>
         </div>
         <div class="form-group">
-          <label for="quick-add-category">Category</label>
+          <label for="quick-add-category">Tag</label>
           <select id="quick-add-category" class="edit-tag-select" onchange="toggleQuickAddNewCat()"></select>
-          <input type="text" id="quick-add-new-cat" placeholder="New category name" autocomplete="off" style="display:none;margin-top:0.5rem">
+          <input type="text" id="quick-add-new-cat" placeholder="New tag name" autocomplete="off" style="display:none;margin-top:0.5rem">
         </div>
         <div class="form-group">
           <label for="quick-add-note">Note <span class="form-note" style="text-transform:none;letter-spacing:normal;font-weight:400">(optional)</span></label>
@@ -154,7 +177,7 @@
 
   <dialog id="new-tag-modal" class="modal">
     <div class="modal-content">
-      <h2>New Category</h2>
+      <h2>New Tag</h2>
       <form id="new-tag-form" onsubmit="createTag(event)">
         <div class="form-group">
           <label for="new-tag-name">Name</label>
@@ -174,7 +197,7 @@
 
   <dialog id="edit-tag-modal" class="modal">
     <div class="modal-content">
-      <h2>Edit category</h2>
+      <h2>Edit tag</h2>
       <form id="edit-tag-form" onsubmit="saveTag(event)">
         <input type="hidden" id="edit-tag-id">
         <div class="form-group">
@@ -195,7 +218,7 @@
 
   <dialog id="tag-delete-modal" class="modal">
     <div class="modal-content">
-      <h2 id="tag-delete-title">Delete category</h2>
+      <h2 id="tag-delete-title">Delete tag</h2>
       <p id="tag-delete-msg" class="hint"></p>
       <select id="tag-delete-select" class="edit-tag-select"></select>
       <div class="modal-actions">
@@ -217,7 +240,7 @@
     </button>
   </div>
 
-  <script src="/static/app.js?v=106"></script>
+  <script src="/static/app.js?v=114"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

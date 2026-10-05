@@ -9,12 +9,6 @@ trade than a slug that drifts away from what the thing is called.
 import re
 import unicodedata
 
-# top-level paths that can never be a category slug
-RESERVED = {
-    "api", "static", "settings", "qr.png", "shortcut", "shortcut-setup",
-    "links", "notes", "favicon.ico",
-}
-
 UNTAGGED = "untagged"
 
 
@@ -41,9 +35,21 @@ def slug_map(rows, key: str) -> dict:
     return out
 
 
-def tag_slugs(conn) -> dict:
-    rows = conn.execute("SELECT id, name FROM tags ORDER BY id").fetchall()
-    return slug_map([{"id": r["id"], "name": r["name"]} for r in rows], "name")
+def tag_paths(conn, kind: str) -> dict:
+    """{id: "parent-slug/child-slug"} for one side's tags. Slugs only need to be
+    unique among siblings, since the parent's slug is in the path too."""
+    rows = conn.execute(
+        "SELECT id, name, parent_id FROM tags WHERE kind=? ORDER BY id", (kind,)
+    ).fetchall()
+    ids = {r["id"] for r in rows}
+    parent = {r["id"]: (r["parent_id"] if r["parent_id"] in ids else None) for r in rows}
+    groups: dict = {}
+    for r in rows:
+        groups.setdefault(parent[r["id"]], []).append({"id": r["id"], "name": r["name"]})
+    slugs: dict = {}
+    for siblings in groups.values():
+        slugs.update(slug_map(siblings, "name"))
+    return {i: (f"{slugs[parent[i]]}/" if parent[i] else "") + slugs[i] for i in ids}
 
 
 def note_slugs(conn, tag_id: int | None) -> dict:

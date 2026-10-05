@@ -42,10 +42,13 @@ def init_db():
             );
 
             CREATE TABLE IF NOT EXISTS tags (
-                id       INTEGER PRIMARY KEY AUTOINCREMENT,
-                name     TEXT    NOT NULL UNIQUE COLLATE NOCASE,
-                color    TEXT    NOT NULL DEFAULT '#6366f1',
-                position INTEGER NOT NULL DEFAULT 0
+                id        INTEGER PRIMARY KEY AUTOINCREMENT,
+                name      TEXT    NOT NULL COLLATE NOCASE,
+                color     TEXT    NOT NULL DEFAULT '#6366f1',
+                position  INTEGER NOT NULL DEFAULT 0,
+                parent_id INTEGER REFERENCES tags(id) ON DELETE SET NULL,
+                kind      TEXT    NOT NULL DEFAULT 'links',
+                UNIQUE(name, kind)
             );
 
             CREATE TABLE IF NOT EXISTS links (
@@ -135,6 +138,8 @@ def init_db():
         _drop_read_columns(conn)
         _file_orphan_notes(conn)
         _add_tag_position(conn)
+        _add_tag_parent(conn)
+        _split_tag_kinds(conn)
         _ensure_default_content_types(conn)
 
         # Generate UUID on first run
@@ -197,6 +202,77 @@ def _add_tag_position(conn):
     rows = conn.execute("SELECT id FROM tags ORDER BY name").fetchall()
     conn.executemany("UPDATE tags SET position=? WHERE id=?",
                      [(i, r["id"]) for i, r in enumerate(rows)])
+
+
+def _add_tag_parent(conn):
+    """One level of nesting: a child tag sits under its parent in the sidebar."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(tags)")}
+    if "parent_id" not in cols:
+        conn.execute("ALTER TABLE tags ADD COLUMN parent_id INTEGER REFERENCES tags(id) ON DELETE SET NULL")
+
+
+def _split_tag_kinds(conn):
+    """Links and notes keep separate tag lists. Each existing tag is copied to
+    the side(s) it is used on; an unused tag stays with Links. A tag used on a
+    side keeps its parent on that side too."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(tags)")}
+    if "kind" in cols:
+        return
+
+    # the table is rebuilt (the name stops being unique on its own), so keep a copy
+    conn.commit()
+    backup = sqlite3.connect(DB_PATH.with_name("tether.before-tag-split.db"))
+    conn.backup(backup)
+    backup.close()
+
+    conn.execute("PRAGMA foreign_keys=OFF")   # or dropping tags would null every reference
+    conn.execute("BEGIN")
+    conn.execute("""
+        CREATE TABLE tags_new (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            name      TEXT    NOT NULL COLLATE NOCASE,
+            color     TEXT    NOT NULL DEFAULT '#6366f1',
+            position  INTEGER NOT NULL DEFAULT 0,
+            parent_id INTEGER REFERENCES tags(id) ON DELETE SET NULL,
+            kind      TEXT    NOT NULL DEFAULT 'links',
+            UNIQUE(name, kind)
+        )""")
+    conn.execute("INSERT INTO tags_new(id, name, color, position, parent_id) "
+                 "SELECT id, name, color, position, parent_id FROM tags")
+    conn.execute("DROP TABLE tags")
+    conn.execute("ALTER TABLE tags_new RENAME TO tags")
+
+    tags = {r["id"]: dict(r) for r in conn.execute("SELECT * FROM tags").fetchall()}
+    has_links = {r[0] for r in conn.execute("SELECT DISTINCT tag_id FROM link_tags")}
+    has_notes = {r[0] for r in conn.execute("SELECT DISTINCT tag_id FROM notes WHERE tag_id IS NOT NULL")}
+
+    def with_parents(ids):
+        return ids | {tags[i]["parent_id"] for i in ids if tags.get(i, {}).get("parent_id") in tags}
+
+    need_notes = with_parents(has_notes & tags.keys())
+    need_links = with_parents({i for i in tags if i in has_links or i not in need_notes})
+
+    notes_id = {}
+    # parents first, so a copy's parent already has its notes-side id
+    for t in sorted(tags.values(), key=lambda t: t["parent_id"] is not None):
+        tid = t["id"]
+        if tid not in need_notes:
+            continue
+        parent = notes_id.get(t["parent_id"])
+        if tid not in need_links:
+            conn.execute("UPDATE tags SET kind='notes', parent_id=? WHERE id=?", (parent, tid))
+            notes_id[tid] = tid
+            continue
+        cur = conn.execute(
+            "INSERT INTO tags(name, color, position, parent_id, kind) VALUES (?,?,?,?, 'notes')",
+            (t["name"], t["color"], t["position"], parent))
+        notes_id[tid] = cur.lastrowid
+        conn.execute("UPDATE notes SET tag_id=? WHERE tag_id=?", (cur.lastrowid, tid))
+        # the notes bucket moves with its notes
+        conn.execute("UPDATE content_types SET tag_id=? WHERE tag_id=? AND kind='notes'",
+                     (cur.lastrowid, tid))
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys=ON")
 
 
 def _ensure_default_content_types(conn):

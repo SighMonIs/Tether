@@ -15,7 +15,7 @@ from pydantic import BaseModel, field_validator
 from typing import Any
 
 from db import db, get_setting, set_setting, NOTES_DIR
-from slugs import slugify, tag_slugs, note_slugs
+from slugs import slugify, tag_paths, note_slugs
 
 router = APIRouter(prefix="/api")
 
@@ -205,23 +205,50 @@ async def _run_bulk_refresh():
 # ── Tags ──────────────────────────────────────────────────────────────────────
 
 NEW_TAG_SENTINEL = "+ New"
+TAG_KINDS = ("links", "notes")
+
+
+def _tag_by_name(conn, name: str, kind: str, color: str | None = None) -> int:
+    """Find or create a tag on one side (Links or Notes)."""
+    row = conn.execute("SELECT id FROM tags WHERE name=? AND kind=?", (name.strip(), kind)).fetchone()
+    if row:
+        return row["id"]
+    pos = conn.execute("SELECT COALESCE(MAX(position), -1) + 1 FROM tags").fetchone()[0]
+    return conn.execute("INSERT INTO tags(name, color, position, kind) VALUES (?,?,?,?)",
+                        (name.strip(), color or _next_color(conn), pos, kind)).lastrowid
+
+
+def _notes_tag(conn, tag_id: int | None) -> int | None:
+    """Notes only file under Notes tags. A note made from a link arrives with
+    the link's tag, so it goes to the Notes tag of the same name instead."""
+    if not tag_id:
+        return None
+    row = conn.execute("SELECT name, color, kind FROM tags WHERE id=?", (tag_id,)).fetchone()
+    if not row:
+        return None
+    return tag_id if row["kind"] == "notes" else _tag_by_name(conn, row["name"], "notes", row["color"])
+
 
 @router.get("/tags")
 def list_tags(
     x_tether_uuid: str | None = Header(default=None),
     shortcut: bool = False,
+    kind: str = "links",   # "links" by default so the extension and Shortcut keep working; "all" for both
 ):
     _check_auth(x_tether_uuid)
+    kinds = TAG_KINDS if kind == "all" else (kind,)
     with db() as conn:
-        rows = conn.execute("""
-            SELECT t.id, t.name, t.color, t.position
+        rows = conn.execute(f"""
+            SELECT t.id, t.name, t.color, t.position, t.parent_id, t.kind
             FROM tags t
+            WHERE t.kind IN ({",".join("?" * len(kinds))})
             ORDER BY t.position, t.name
-        """).fetchall()
-        slugs = tag_slugs(conn)
+        """, kinds).fetchall()
+        paths = {k: tag_paths(conn, k) for k in kinds}
     result = [dict(r) for r in rows]
     for r in result:
-        r["slug"] = slugs.get(r["id"], "")
+        r["path"] = paths[r["kind"]].get(r["id"], "")
+        r["slug"] = r["path"].rsplit("/", 1)[-1]
     if shortcut:
         result.append({"id": "__new__", "name": NEW_TAG_SENTINEL, "color": "#888899", "position": 9999})
     return result
@@ -230,18 +257,18 @@ def list_tags(
 class TagCreate(BaseModel):
     name: str
     color: str | None = None
+    kind: str = "links"
 
 
 @router.post("/tags", status_code=201)
 def create_tag(body: TagCreate, x_tether_uuid: str | None = Header(default=None)):
     _check_auth(x_tether_uuid)
+    if body.kind not in TAG_KINDS:
+        raise HTTPException(status_code=400, detail="kind must be links or notes")
     with db() as conn:
-        color = body.color or _next_color(conn)
-        pos = conn.execute("SELECT COALESCE(MAX(position), -1) + 1 p FROM tags").fetchone()["p"]
-        conn.execute("INSERT OR IGNORE INTO tags(name, color, position) VALUES (?,?,?)",
-                     (body.name.strip(), color, pos))
-        row = conn.execute("SELECT id, name, color, position FROM tags WHERE name=?",
-                           (body.name.strip(),)).fetchone()
+        tag_id = _tag_by_name(conn, body.name, body.kind, body.color)
+        row = conn.execute("SELECT id, name, color, position, kind FROM tags WHERE id=?",
+                           (tag_id,)).fetchone()
         for i, kind in enumerate(("links", "notes")):
             if not conn.execute("SELECT 1 FROM content_types WHERE tag_id=? AND kind=?",
                                 (row["id"], kind)).fetchone():
@@ -267,6 +294,7 @@ def reorder_tags(body: TagReorder, x_tether_uuid: str | None = Header(default=No
 class TagUpdate(BaseModel):
     name: str | None = None
     color: str | None = None
+    parent_id: int | None = None   # sent as null to move a tag back to the top level
 
 
 @router.patch("/tags/{tag_id}")
@@ -277,6 +305,18 @@ def update_tag(tag_id: int, body: TagUpdate, x_tether_uuid: str | None = Header(
             conn.execute("UPDATE tags SET name=? WHERE id=?", (body.name.strip(), tag_id))
         if body.color is not None:
             conn.execute("UPDATE tags SET color=? WHERE id=?", (body.color, tag_id))
+        if "parent_id" in body.model_fields_set:
+            parent = body.parent_id
+            if parent is not None:
+                # one level only: the parent must be top-level, and a parent can't become a child
+                ok = conn.execute(
+                    "SELECT 1 FROM tags p JOIN tags t ON t.id=? "
+                    "WHERE p.id=? AND p.parent_id IS NULL AND p.id<>t.id AND p.kind=t.kind",
+                    (tag_id, parent)).fetchone()
+                has_kids = conn.execute("SELECT 1 FROM tags WHERE parent_id=?", (tag_id,)).fetchone()
+                if not ok or has_kids:
+                    raise HTTPException(status_code=400, detail="Tags nest one level deep")
+            conn.execute("UPDATE tags SET parent_id=? WHERE id=?", (parent, tag_id))
         row = conn.execute("SELECT id, name, color FROM tags WHERE id=?", (tag_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404)
@@ -401,11 +441,7 @@ async def create_link(
             (link_id, url, title, description, favicon_url)
         )
         for tag_name in tags[:1]:
-            color = _next_color(conn)
-            conn.execute("INSERT OR IGNORE INTO tags(name, color) VALUES (?,?)", (tag_name, color))
-            tag_row = conn.execute("SELECT id FROM tags WHERE name=?", (tag_name,)).fetchone()
-            if tag_row:
-                _link_tag_write(conn, link_id, tag_row["id"])
+            _link_tag_write(conn, link_id, _tag_by_name(conn, tag_name, "links"))
 
     # only go scraping when the caller had nothing to give us
     if not title:
@@ -597,11 +633,7 @@ def update_link(
                 tag_name = tag_name.strip()
                 if not tag_name:
                     continue
-                color = _next_color(conn)
-                conn.execute("INSERT OR IGNORE INTO tags(name, color) VALUES (?,?)", (tag_name, color))
-                tag_row = conn.execute("SELECT id FROM tags WHERE name=?", (tag_name,)).fetchone()
-                if tag_row:
-                    _link_tag_write(conn, link_id, tag_row["id"])
+                _link_tag_write(conn, link_id, _tag_by_name(conn, tag_name, "links"))
         row = conn.execute("SELECT * FROM links WHERE id=?", (link_id,)).fetchone()
         if not row:
             raise HTTPException(status_code=404)
@@ -729,11 +761,12 @@ def create_note(body: NoteCreate, x_tether_uuid: str | None = Header(default=Non
     with db() as conn:
         min_pos = conn.execute("SELECT MIN(position) FROM notes").fetchone()[0]
         position = (min_pos - 1) if min_pos is not None else 0
+        tag_id = _notes_tag(conn, body.tag_id)
         conn.execute(
             "INSERT INTO notes(id, title, tag_id, link_id, position) VALUES (?,?,?,?,?)",
-            (note_id, title, body.tag_id, body.link_id, position),
+            (note_id, title, tag_id, body.link_id, position),
         )
-        _file_note(conn, note_id, body.tag_id)
+        _file_note(conn, note_id, tag_id)
         row = conn.execute(f"{_NOTE_SELECT} WHERE n.id=?", (note_id,)).fetchone()
     return _note_dict(row)
 
@@ -787,9 +820,9 @@ def update_note(note_id: str, body: NoteUpdate, x_tether_uuid: str | None = Head
         if body.tag_id is not None:
             conn.execute(
                 "UPDATE notes SET tag_id=?, updated_at=datetime('now') WHERE id=?",
-                (body.tag_id or None, note_id),
+                (_notes_tag(conn, body.tag_id), note_id),
             )
-            _file_note(conn, note_id, body.tag_id or None)
+            _file_note(conn, note_id, _notes_tag(conn, body.tag_id))
         if body.content is not None:
             path.write_text(body.content, encoding="utf-8")
             conn.execute("UPDATE notes SET updated_at=datetime('now') WHERE id=?", (note_id,))
@@ -1020,12 +1053,7 @@ async def import_data(
             # Upsert tags (match by name, preserve existing ids where possible)
             tag_id_map: dict[int, int] = {}
             for tag in data.get("tags", []):
-                existing = conn.execute("SELECT id FROM tags WHERE name=? COLLATE NOCASE", (tag["name"],)).fetchone()
-                if existing:
-                    tag_id_map[tag["id"]] = existing["id"]
-                else:
-                    cur = conn.execute("INSERT INTO tags(name, color) VALUES(?,?)", (tag["name"], tag["color"]))
-                    tag_id_map[tag["id"]] = cur.lastrowid
+                tag_id_map[tag["id"]] = _tag_by_name(conn, tag["name"], "links", tag["color"])
 
             # Upsert links (skip duplicates by id)
             imported = 0

@@ -25,25 +25,6 @@
           <button class="toggle-btn" data-cmd="link" title="Link"><i data-lucide="link"></i></button>
         </div>
 
-        <div class="feed-scroll" id="overview-view">
-          <div class="overview-pane">
-            <section class="ov-section">
-              <div class="ov-header">
-                <span class="ov-label">Links</span>
-                <button type="button" class="ov-viewall" data-goto="links">View all</button>
-              </div>
-              <div id="ov-links"></div>
-            </section>
-            <section class="ov-section">
-              <div class="ov-header">
-                <span class="ov-label">Notes</span>
-                <button type="button" class="ov-viewall" data-goto="notes">View all</button>
-              </div>
-              <div id="ov-notes"></div>
-            </section>
-          </div>
-        </div>
-
         <div class="feed-scroll" id="notes-list-view" style="display:none">
           <div class="notes-list-pane">
             <button type="button" class="notes-new-btn" id="notes-new-btn">
@@ -74,15 +55,6 @@
   </div>
 </div><!-- /.feed -->
 
-<script>
-  // avoid a flash of the overview before notes.js (a module) runs
-  const _type = new URLSearchParams(location.search).get("type");
-  if (_type === "links" || _type === "notes") {
-    document.getElementById("overview-view").style.display = "none";
-    document.getElementById(_type === "links" ? "links-view" : "notes-list-view").style.display = "";
-  }
-</script>
-
 <dialog id="edit-modal" class="modal">
   <div class="modal-content">
     <h2>Edit link</h2>
@@ -101,7 +73,7 @@
         <textarea id="edit-desc" class="import-textarea" rows="3" placeholder="What is this about?"></textarea>
       </div>
       <div class="form-group">
-        <label for="edit-category">Category</label>
+        <label for="edit-category">Tag</label>
         <select id="edit-category" class="edit-tag-select"></select>
       </div>
       <div class="modal-actions">
@@ -118,10 +90,10 @@
 
 <dialog id="bulk-category-modal" class="modal">
   <div class="modal-content">
-    <h2 id="bulk-category-title">Change category</h2>
+    <h2 id="bulk-category-title">Change tag</h2>
     <form id="bulk-category-form" onsubmit="submitBulkCategory(event)">
       <div class="form-group">
-        <label for="bulk-category-select">Category</label>
+        <label for="bulk-category-select">Tag</label>
         <select id="bulk-category-select" class="edit-tag-select"></select>
       </div>
       <div class="modal-actions">
@@ -134,12 +106,12 @@
 
 <dialog id="note-category-modal" class="modal">
   <div class="modal-content">
-    <h2>Change category</h2>
+    <h2>Change tag</h2>
     <form id="note-category-form">
       <div class="form-group">
-        <label for="note-category-select">Category</label>
+        <label for="note-category-select">Tag</label>
         <select id="note-category-select" class="edit-tag-select">
-          <option value="0">No category</option>
+          <option value="0">No tag</option>
         </select>
       </div>
       <div class="modal-actions">
@@ -151,5 +123,5 @@
 </dialog>
 {% endblock %}
 {% block scripts %}
-<script type="module" src="/static/notes.js?v=102"></script>
+<script type="module" src="/static/notes.js?v=105"></script>
 {% endblock %}

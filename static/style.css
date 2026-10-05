@@ -85,9 +85,7 @@ body {
 
 .add-panel {
   display: none;
-  position: absolute;
-  top: calc(100% + 8px);
-  left: 0;
+  position: fixed;   /* openAddPanel places it under its button */
   z-index: 70;
   width: 340px;
   padding: 14px;
@@ -175,6 +173,33 @@ body {
   flex: 1;
   min-height: 0;
 }
+
+/* ── Category sidebar (icon rail) ─────────────────────────── */
+.rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 52px;
+  height: 100%;
+  flex-shrink: 0;
+  padding: 12px 0;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+.rail-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border-radius: var(--radius-sm);
+  color: var(--n-400);
+  transition: background 0.12s, color 0.12s;
+}
+.rail-btn i { width: 17px; height: 17px; }
+.rail-btn:hover { color: var(--text); }
+.rail-btn.active { background: var(--bg); color: var(--text); }
 
 /* ── Sidebar ─────────────────────────────────────────────── */
 :root {
@@ -343,118 +368,52 @@ body {
   flex-shrink: 0;
 }
 
-/* drill-down: the pane slides left on the way in, right on the way back */
-.sidebar-back {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 100%;
-  padding: 7px 8px;
-  margin-bottom: 2px;
-  flex-shrink: 0;
-  background: none;
-  border: none;
-  border-radius: var(--radius-sm);
-  color: var(--n-300);
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 500;
-  text-align: left;
-  cursor: pointer;
-  transition: background 0.12s, color 0.12s;
-}
-.sidebar-back i { width: 14px; height: 14px; flex-shrink: 0; }
-.sidebar-back:hover { background: var(--surface2); color: var(--text); }
-.sidebar-back span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-.sidebar-cat-title .sidebar-cat-folder { width: 13px; height: 13px; }
-/* the title doubles as the category's own row, so it highlights like one */
-.sidebar-cat-title { text-decoration: none; border-radius: var(--radius-sm); }
-.sidebar-cat-title:hover { color: var(--text); }
-.sidebar-cat-title.active { background: var(--bg); color: var(--n-100); }
-
-.ct-heading {
-  display: flex;
-  align-items: center;
-  margin-top: 10px;
-  padding: 4px 8px 2px;
-}
-.ct-heading-label {
-  flex: 1;
-  min-width: 0;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--subtext);
-  opacity: .8;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sidebar-cat-link.ct-note { padding-left: 8px; }
 .sidebar-cats li.dragging { opacity: 0.4; }
 .sidebar-cats li[data-order] .sidebar-cat-link { cursor: grab; }
-.sidebar-empty {
-  padding: 7px 8px;
-  font-size: 12.5px;
-  color: var(--subtext);
-}
-.sidebar-cat-title span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar-cat-title {
+
+/* the Tags sidebar's title names the active category; + adds to it */
+.sidebar-head {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 8px 4px;
+  justify-content: space-between;
+  padding: 2px 4px 8px 8px;
   flex-shrink: 0;
+}
+.sidebar-head-title {
   font-size: 11px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--subtext);
-  opacity: .8;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
+.sidebar-head .row-overflow { opacity: 1; }
 
-/* only the incoming pane animates — cheaper than keeping both panes mounted,
-   and it reads the same at this speed */
-@keyframes sidebar-from-right {
-  from { transform: translateX(100%); opacity: 0; }
-  to   { transform: translateX(0);    opacity: 1; }
+/* nested tags: a parent's chevron folds its children; the spacer keeps names aligned */
+.tag-chevron,
+.tag-chevron-space {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
 }
-@keyframes sidebar-from-left {
-  from { transform: translateX(-100%); opacity: 0; }
-  to   { transform: translateX(0);     opacity: 1; }
-}
-/* the sidebar clips the pane so it slides off its own edge, not the viewport */
-.sidebar { overflow-x: hidden; }
-#sidebar-cats.slide-from-right { animation: sidebar-from-right 0.22s ease-out; }
-#sidebar-cats.slide-from-left  { animation: sidebar-from-left  0.22s ease-out; }
-
-@media (prefers-reduced-motion: reduce) {
-  #sidebar-cats.slide-from-right, #sidebar-cats.slide-from-left { animation: none; }
-}
-
-.sidebar-new-cat {
+.tag-chevron {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
-  width: 100%;
-  margin-top: 6px;
-  padding: 7px 8px;
-  flex-shrink: 0;
+  padding: 0;
   background: none;
   border: none;
-  border-radius: var(--radius-sm);
-  color: var(--n-400);
-  font-family: inherit;
-  font-size: 13px;
+  border-radius: 4px;
+  color: var(--n-500);
   cursor: pointer;
-  transition: background 0.12s, color 0.12s;
 }
-.sidebar-new-cat i { width: 14px; height: 14px; }
-.sidebar-new-cat:hover { background: var(--surface2); color: var(--text); }
+.tag-chevron i { width: 13px; height: 13px; }
+.tag-chevron:hover { color: var(--text); }
+.sidebar-cats li.tag-child { padding-left: 18px; }
+/* a note's icon sits under its tag's folder */
+.sidebar-cats li.sidebar-note { padding-left: 34px; }
+.sidebar-cats li.sidebar-note.deep { padding-left: 52px; }
+.sidebar-cats li.sidebar-note .sidebar-cat-link i { width: 14px; height: 14px; flex-shrink: 0; }
+.sidebar-cats li.sidebar-empty { padding: 4px 8px 4px 42px; font-size: 12px; color: var(--subtext); }
+.sidebar-cats li.sidebar-empty.deep { padding-left: 60px; }
 
 .sidebar-cat-dot {
   width: 7px;
@@ -1074,36 +1033,7 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
 .filter-panel input[type="date"]::-webkit-calendar-picker-indicator { filter: invert(0.7); cursor: pointer; }
 .filter-summary { font-size: 11.5px; color: var(--subtext); padding: 2px 0 6px; }
 
-a.ov-viewall { text-decoration: underline; }
-
-/* ── Overview ("All") ────────────────────────────────────── */
-.overview-pane {
-  max-width: var(--content-w);
-  padding: 1.25rem 1rem 2rem;
-  display: flex;
-  flex-direction: column;
-  gap: 1.75rem;
-}
-.ov-header {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 4px;
-}
-.ov-label { font-size: 12.5px; font-weight: 500; color: var(--n-100); }
-.ov-viewall {
-  background: none;
-  border: none;
-  padding: 0;
-  color: var(--n-300);
-  font-family: inherit;
-  font-size: 12px;
-  cursor: pointer;
-  text-decoration: underline;
-}
-.ov-viewall:hover { color: var(--n-100); }
-
+/* ── Note rows (a Notes tag's list) ─────────────────────── */
 .ov-row {
   display: flex;
   align-items: center;
@@ -1130,7 +1060,6 @@ a.ov-viewall { text-decoration: underline; }
   white-space: nowrap;
 }
 .ov-date { font-size: 11.5px; color: var(--subtext); flex-shrink: 0; }
-.ov-empty { font-size: 12.5px; color: var(--subtext); padding: 8px 0; }
 
 .notes-list-pane {
   max-width: var(--content-w);

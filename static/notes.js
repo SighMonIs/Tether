@@ -34,7 +34,6 @@ const categoryForm = document.getElementById("note-category-form");
 
 const urlParams = new URLSearchParams(location.search);
 
-const overviewView = document.getElementById("overview-view");
 const ctView = document.getElementById("ct-view");
 const notesListView = document.getElementById("notes-list-view");
 const noteView = document.getElementById("note-editor-view");
@@ -42,7 +41,7 @@ const linksView = document.getElementById("links-view");
 
 const VIEW = window.TETHER_VIEW || { tag: null, uncategorised: false, type: "all", ct: null, note: null };
 
-let currentView = "all";  // "all" | "links" | "notes" | "ct" | "editor"
+let currentView = "links";  // "links" | "notes" | "ct" | "editor"
 let currentCtId = VIEW.ct ? String(VIEW.ct) : null;
 
 let noteQuery = "";
@@ -58,7 +57,6 @@ function setView(v, persist = true) {
   currentView = v;
   const editing = v === "editor";
   noteView.style.display = editing ? "" : "none";
-  overviewView.style.display = v === "all" ? "" : "none";
   if (ctView) ctView.style.display = v === "ct" ? "" : "none";
   notesListView.style.display = v === "notes" ? "" : "none";
   linksView.style.display = v === "links" ? "" : "none";
@@ -68,7 +66,6 @@ function setView(v, persist = true) {
   if (!editing) { hideBubble(); hideLinkBar(); }
   if (!editing && v !== "ct") window.setSidebarNote?.(null);
   if (v === "notes" || editing) renderList();
-  if (v === "all") renderOverview();
   if (v === "ct") window.renderContentTypeView?.(currentCtId);
 }
 
@@ -77,10 +74,10 @@ window.setShowingLinks = on => setView(on ? "links" : "notes");
 
 // swap the content area in place — the sidebar updates the URL itself
 window.showContentTypeView = ctId => { currentCtId = ctId; setView("ct"); };
-window.showCategoryOverview = () => setView("all");
 
-const filterTagId = VIEW.tag || null;
-const filterUncategorised = !!VIEW.uncategorised;
+// read live: the sidebar moves between tags without a page load
+const filterTagId = () => VIEW.tag || null;
+const filterUncategorised = () => !!VIEW.uncategorised;
 
 let currentNoteId = null;
 let saveTimeout = null;
@@ -290,16 +287,17 @@ titleInput.addEventListener("input", () => scheduleSave());
 
 let categoryModalNoteId = null;
 
-function openCategoryModal(noteId) {
+// the sidebar knows the tag of notes outside this page's list, so it passes it
+function openCategoryModal(noteId, tagId) {
   const note = notesCache.find(n => n.id === noteId);
   categoryModalNoteId = noteId;
-  categorySelect.value = note?.tag ? String(note.tag.id) : "0";
+  categorySelect.value = tagId != null ? String(tagId || 0) : note?.tag ? String(note.tag.id) : "0";
   categoryModal.showModal();
 }
 
 // the sidebar's per-note menu drives these
 window.createNoteInCategory = () => createNote();
-window.openNoteCategory = noteId => openCategoryModal(noteId);
+window.openNoteCategory = (noteId, tagId) => openCategoryModal(noteId, tagId);
 window.deleteNoteById = noteId => deleteNote(noteId);
 
 categoryForm.addEventListener("submit", async e => {
@@ -314,22 +312,25 @@ categoryForm.addEventListener("submit", async e => {
     const note = await res.json();
     const idx = notesCache.findIndex(n => n.id === note.id);
     if (idx !== -1) notesCache[idx] = note;
+    // a note moved out of the tag on screen leaves its list
+    if (filterTagId() && note.tag_id !== filterTagId()) notesCache = notesCache.filter(n => n.id !== note.id);
     renderList();
+    window.reloadSidebarNotes?.();
   }
   categoryModal.close();
 });
 
 async function loadTags() {
-  const res = await fetch("/api/tags", { headers: authHeaders(false) });
+  const res = await fetch("/api/tags?kind=notes", { headers: authHeaders(false) });
   allTags = res.ok ? await res.json() : [];
-  categorySelect.innerHTML = `<option value="0">No category</option>` + allTags.map(t =>
+  categorySelect.innerHTML = `<option value="0">No tag</option>` + allTags.map(t =>
     `<option value="${t.id}">${escHtml(t.name)}</option>`
   ).join("");
 
-  if (filterTagId) {
-    const tag = allTags.find(t => t.id === filterTagId);
+  if (filterTagId()) {
+    const tag = allTags.find(t => t.id === filterTagId());
     if (tag) window.setPageTitle?.(tag.name);
-  } else if (filterUncategorised) {
+  } else if (filterUncategorised()) {
     window.setPageTitle?.("Untagged");
   }
 }
@@ -393,7 +394,7 @@ listEl.addEventListener("dragover", ev => {
 
 function renderList() {
   listEl.innerHTML = "";
-  const historyMode = !filterTagId && !filterUncategorised;
+  const historyMode = !filterTagId() && !filterUncategorised();
   let notes = historyMode
     ? [...notesCache].sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
     : notesCache;
@@ -415,7 +416,7 @@ function renderList() {
         </button>
         <div class="row-menu">
           <button type="button" class="row-menu-item" data-action="category">
-            <i data-lucide="tag"></i> Change category
+            <i data-lucide="tag"></i> Change tag
           </button>
           <button type="button" class="row-menu-item danger" data-action="delete">
             <i data-lucide="trash-2"></i> Delete
@@ -463,118 +464,6 @@ function renderList() {
   if (window.lucide) lucide.createIcons();
 }
 
-/* ── Overview ("All") ────────────────────────────────────── */
-async function renderOverview() {
-  if (filterTagId) return renderCategoryOverview();
-  return renderRootOverview();
-}
-
-// inside a category: one section per content type, five most recent each
-async function renderCategoryOverview() {
-  const pane = document.querySelector(".overview-pane");
-  if (!pane) return;
-  const res = await fetch(`/api/content-types?tag=${filterTagId}`, { headers: authHeaders(false) });
-  const types = res.ok ? await res.json() : [];
-  if (!types.length) {
-    pane.innerHTML = `<div class="ov-empty">No content types yet — add one from the sidebar.</div>`;
-    return;
-  }
-  const blocks = await Promise.all(types.map(async ct => {
-    const r = await fetch(`/api/content-types/${ct.id}/items`, { headers: authHeaders(false) });
-    const d = r.ok ? await r.json() : { links: [], notes: [] };
-    const rows = [
-      ...d.links.map(l => ({ html: window.linkCardHtml(l), at: l.created_at })),
-      ...d.notes.map(n => ({
-        html: `<div class="ov-row" data-note="${n.id}">
-                 <span class="ov-title">${escHtml(n.title || "Untitled")}</span>
-                 <span class="ov-date">${window.friendlyDate(n.updated_at)}</span>
-                 <div class="row-menu-wrap">
-                   <button class="row-overflow" type="button" title="More">
-                     <i data-lucide="ellipsis-vertical"></i>
-                   </button>
-                   <div class="row-menu">
-                     <button type="button" class="row-menu-item" data-note-action="category" data-id="${n.id}">
-                       <i data-lucide="tag"></i> Change category
-                     </button>
-                     <button type="button" class="row-menu-item danger" data-note-action="delete" data-id="${n.id}">
-                       <i data-lucide="trash-2"></i> Delete
-                     </button>
-                   </div>
-                 </div>
-               </div>`, at: n.updated_at })),
-    ].sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 5);
-    const body = rows.map(r => r.html).join("")
-      || `<div class="ov-empty">Nothing in here yet.</div>`;
-    return `
-      <section class="ov-section">
-        <div class="ov-header">
-          <span class="ov-label">${escHtml(ct.title)}</span>
-        </div>
-        ${body}
-      </section>`;
-  }));
-  pane.innerHTML = blocks.join("");
-  pane.querySelectorAll("[data-note]").forEach(row => {
-    row.addEventListener("click", () => openNote(row.dataset.note));
-  });
-  // the menu sits inside the row, so keep its clicks from opening the note
-  pane.querySelectorAll(".ov-row .row-menu-wrap").forEach(wrap => {
-    wrap.addEventListener("click", ev => ev.stopPropagation());
-  });
-  pane.querySelectorAll(".ov-row .row-overflow").forEach(btn => {
-    btn.addEventListener("click", () => window.toggleRowMenu?.(btn));
-  });
-  pane.querySelectorAll(".ov-row [data-note-action]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      window.closeRowMenus?.();
-      if (btn.dataset.noteAction === "category") window.openNoteCategory?.(btn.dataset.id);
-      else window.deleteNoteById?.(btn.dataset.id);
-    });
-  });
-  window.bindLinkRowMenus?.(pane);
-  if (window.lucide) lucide.createIcons();
-}
-
-async function renderRootOverview() {
-  const notes = [...notesCache]
-    .sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1))
-    .slice(0, 5);
-  document.getElementById("ov-notes").innerHTML = notes.length
-    ? notes.map(n => `
-      <div class="ov-row" data-note="${n.id}">
-        <span class="ov-title">${escHtml(n.title || "Untitled")}</span>
-        <span class="ov-date">${window.friendlyDate(n.updated_at)}</span>
-      </div>`).join("")
-    : `<div class="ov-empty">No notes yet.</div>`;
-  document.querySelectorAll("#ov-notes .ov-row").forEach(row => {
-    row.addEventListener("click", () => openNote(row.dataset.note));
-  });
-
-  const qs = new URLSearchParams();
-  if (filterTagId) qs.set("tag", filterTagId);
-  if (filterUncategorised) qs.set("uncategorised", "true");
-  const res = await fetch(`/api/links${qs.toString() ? "?" + qs : ""}`, { headers: authHeaders(false) });
-  const links = (res.ok ? await res.json() : []).slice(0, 5);
-  const ovLinks = document.getElementById("ov-links");
-  ovLinks.innerHTML = links.length
-    ? links.map(l => window.linkCardHtml(l)).join("")
-    : `<div class="ov-empty">No links yet.</div>`;
-  window.bindLinkRowMenus?.(ovLinks);
-  if (window.lucide) lucide.createIcons();
-}
-
-// the readable path for whichever category this page is scoped to
-function categoryBase() {
-  if (filterUncategorised) return "/untagged";
-  const tag = allTags.find(t => t.id === filterTagId);
-  return tag ? `/${tag.slug}` : "";
-}
-
-// navigate so the path carries the view and Back returns to the overview
-document.querySelectorAll(".ov-viewall").forEach(btn => {
-  btn.addEventListener("click", () => { location.href = `${categoryBase()}/${btn.dataset.goto}`; });
-});
-
 async function openNote(id, switchTab = true) {
   if (switchTab) setView("editor");
   if (id === currentNoteId) {
@@ -608,7 +497,7 @@ async function createNote() {
   const res = await fetch("/api/notes", {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ title: "Untitled", tag_id: filterTagId }),
+    body: JSON.stringify({ title: "Untitled", tag_id: filterTagId() }),
   });
   if (!res.ok) return;
   const note = await res.json();
@@ -625,7 +514,7 @@ window.createNoteFromLink = async function(title, url, linkId) {
   const res = await fetch("/api/notes", {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ title, tag_id: filterTagId, link_id: linkId }),
+    body: JSON.stringify({ title, tag_id: filterTagId(), link_id: linkId }),
   });
   if (!res.ok) return;
   const note = await res.json();
@@ -662,8 +551,8 @@ async function deleteNote(id) {
 
 async function loadNotes() {
   const qs = new URLSearchParams();
-  if (filterTagId) qs.set("tag", filterTagId);
-  if (filterUncategorised) qs.set("uncategorised", "true");
+  if (filterTagId()) qs.set("tag", filterTagId());
+  if (filterUncategorised()) qs.set("uncategorised", "true");
   const res = await fetch(`/api/notes${qs.toString() ? "?" + qs : ""}`, { headers: authHeaders(false) });
   notesCache = res.ok ? await res.json() : [];
   currentNoteId = null;
@@ -674,12 +563,11 @@ async function loadNotes() {
   statusEl.textContent = "";
   renderList();
   if (VIEW.note) { openNote(VIEW.note); return; }
-  if (currentView === "all") renderOverview();
 }
 
 // runs last: setView() calls renderList(), which reads the consts declared above
 // the server already worked out which view the path means
-setView(["all", "links", "notes", "ct"].includes(VIEW.type) ? VIEW.type : "all");
+setView(["links", "notes", "ct"].includes(VIEW.type) ? VIEW.type : "links");
 
 (async () => {
   await loadTags();
