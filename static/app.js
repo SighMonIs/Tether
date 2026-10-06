@@ -1370,6 +1370,8 @@ async function loadSidebarCats() {
     }
     _sidebarLoaded = true;
     renderSidebar();
+    // the links pane is headed by its tag's name, which may only now be known
+    if (_ctData) renderCtPane(_ctData.content_type.id);
   } catch {}
 }
 
@@ -1664,19 +1666,21 @@ function renderCtPane(ctId) {
   if (!pane || !_ctData) return;
   const ct = _ctData.content_type;
   const kind = ct.kind;
+  // headed by the tag it belongs to, not the bucket's own name ("Links")
+  const heading = _sidebarTags.find(t => t.id === ct.tag_id)?.name || ct.title;
   const links = kind === "links" ? filteredCtLinks() : [];
   const n = ctFilterCount();
 
   const head = kind === "links" ? `
     <div class="ct-head">
-      <h1>${escHtml(ct.title)}</h1>
+      <h1>${escHtml(heading)}</h1>
       <div class="ct-head-mid">${ctActionsMenu()}</div>
       <div class="ct-head-right">
         ${ctSelectControls()}
         ${ctFilterPanel()}
       </div>
     </div>` : `
-    <div class="ct-head"><h1>${escHtml(ct.title)}</h1></div>`;
+    <div class="ct-head"><h1>${escHtml(heading)}</h1></div>`;
 
   let body;
   if (kind === "links") {
