@@ -309,9 +309,7 @@ categoryForm.addEventListener("submit", async e => {
 async function loadTags() {
   const res = await fetch("/api/tags?kind=notes", { headers: authHeaders(false) });
   allTags = res.ok ? await res.json() : [];
-  categorySelect.innerHTML = `<option value="0">No tag</option>` + allTags.map(t =>
-    `<option value="${t.id}">${escHtml(t.name)}</option>`
-  ).join("");
+  categorySelect.innerHTML = `<option value="0">No tag</option>` + window.tagOptions(allTags);
 
   if (filterTagId()) {
     const tag = allTags.find(t => t.id === filterTagId());

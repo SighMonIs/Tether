@@ -384,9 +384,8 @@ async function openTagDeleteModal(id, name) {
   const select = document.getElementById("tag-delete-select");
   const res = await fetch(`/api/tags?kind=${MODE}`, { headers: headers() });
   const tags = res.ok ? await res.json() : [];
-  const moveOptions = `<option value="">Untagged</option>` + tags
-    .filter(t => t.id !== id)
-    .map(t => `<option value="${t.id}">${escHtml(t.name)}</option>`).join("");
+  // the doomed tag's children stay listed; with it gone they show at the top level
+  const moveOptions = `<option value="">Untagged</option>` + tagOptions(tags.filter(t => t.id !== id));
   select.innerHTML = `<option value="purge">Delete as well</option>`
     + `<optgroup label="Move to:">${moveOptions}</optgroup>`;
   document.getElementById("tag-delete-modal").showModal();
@@ -785,13 +784,21 @@ async function openNoteForLink(linkId, noteId) {
 }
 
 /* ── Edit modal ──────────────────────────────────────────── */
-// every category picker is a plain single select now
-function fillCategorySelect(el, selectedId) {
+// every category picker is a plain single select now; children sit under
+// their parent, indented with nbsp since iOS ignores padding on <option>
+function tagOptions(tags, selectedId) {
+  const isTop = t => !t.parent_id || !tags.some(p => p.id === t.parent_id);
+  const opt = (t, pad) =>
+    `<option value="${t.id}" ${String(t.id) === String(selectedId) ? "selected" : ""}>${pad}${escHtml(t.name)}</option>`;
+  return tags.filter(isTop).map(p =>
+    opt(p, "") + tags.filter(t => !isTop(t) && t.parent_id === p.id)
+      .map(t => opt(t, "&nbsp;&nbsp;&nbsp;&nbsp;")).join("")
+  ).join("");
+}
+
+function fillCategorySelect(el, selectedId, emptyLabel = "No tag") {
   if (!el) return;
-  el.innerHTML = `<option value="">No tag</option>` +
-    _sidebarTags.map(t =>
-      `<option value="${t.id}" ${String(t.id) === String(selectedId) ? "selected" : ""}>${escHtml(t.name)}</option>`
-    ).join("");
+  el.innerHTML = `<option value="">${emptyLabel}</option>` + tagOptions(_sidebarTags, selectedId);
 }
 
 let _allTags  = []; // [{id, name, color}] from server
@@ -848,12 +855,7 @@ function openAddPanel(anchor = document.getElementById("topbar-add")) {
   const r = anchor.getBoundingClientRect();
   panel.style.top = `${r.bottom + 8}px`;
   panel.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - panel.offsetWidth - 8))}px`;
-  const sel = document.getElementById("add-panel-category");
-  const current = VIEW.tag ? String(VIEW.tag) : null;
-  sel.innerHTML = `<option value="">Untagged</option>` +
-    _sidebarTags.map(t =>
-      `<option value="${t.id}" ${String(t.id) === current ? "selected" : ""}>${escHtml(t.name)}</option>`
-    ).join("");
+  fillCategorySelect(document.getElementById("add-panel-category"), VIEW.tag, "Untagged");
   setTimeout(() => document.getElementById("add-panel-url").focus(), 30);
 }
 
