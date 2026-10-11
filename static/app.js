@@ -269,10 +269,20 @@ async function deleteLink(id) {
 }
 
 /* ── Search ──────────────────────────────────────────────── */
-// The top bar searches everything, wherever you are; results drop down under it
+// The rail's search button searches everything, wherever you are
 function initSearch() {
   const input = document.getElementById("search-input");
   if (!input) return;
+  const pop = document.getElementById("search-pop");
+  const btn = document.getElementById("search-btn");
+  const hide = () => { pop.classList.remove("open"); close(); };
+  btn.addEventListener("click", ev => {
+    ev.stopPropagation();
+    if (pop.classList.contains("open")) return hide();
+    pop.classList.add("open");
+    placeBeside(pop, btn);
+    input.focus();
+  });
   const panel = document.createElement("div");
   panel.className = "search-results";
   input.closest(".search-box").appendChild(panel);
@@ -311,15 +321,15 @@ function initSearch() {
   });
   input.addEventListener("focus", () => { if (input.value.trim()) run(); });
   input.addEventListener("keydown", ev => {
-    if (ev.key === "Escape") { close(); input.blur(); }
+    if (ev.key === "Escape") { hide(); input.blur(); }
   });
-  document.addEventListener("click", ev => { if (!ev.target.closest(".search-box")) close(); });
+  document.addEventListener("click", ev => { if (!ev.target.closest(".search-box")) hide(); });
   panel.addEventListener("click", ev => {
     const a = ev.target.closest("a[data-note]");
     // a note opens in place when the Notes side is already on screen
     if (!a || MODE !== "notes" || !window.openNoteById || ev.ctrlKey || ev.metaKey) return;
     ev.preventDefault();
-    close();
+    hide();
     setViewTag(a.dataset.tag);
     openSidebarTag(a.dataset.tag);
     if (location.pathname !== a.getAttribute("href")) history.pushState({}, "", a.getAttribute("href"));
@@ -847,14 +857,21 @@ let _addMode = "one";        // "one" | "many"
 let _addPanelMeta = {};      // favicon from the preview, carried to the save
 let _addPreviewSeq = 0;      // ignore previews that resolve out of order
 
-// the panel drops down from whichever + opened it
-function openAddPanel(anchor = document.getElementById("topbar-add")) {
+// popovers open beside a rail button, or drop down from anything else
+function placeBeside(panel, anchor) {
+  const r = anchor.getBoundingClientRect();
+  const rail = anchor.closest(".rail");
+  panel.style.top = `${rail ? r.top : r.bottom + 8}px`;
+  const left = rail ? r.right + 10 : r.left;
+  panel.style.left = `${Math.max(8, Math.min(left, window.innerWidth - panel.offsetWidth - 8))}px`;
+}
+
+// the panel opens from whichever + opened it
+function openAddPanel(anchor = document.getElementById("rail-add")) {
   const panel = document.getElementById("add-panel");
   if (!panel) return;
   panel.classList.add("open");
-  const r = anchor.getBoundingClientRect();
-  panel.style.top = `${r.bottom + 8}px`;
-  panel.style.left = `${Math.max(8, Math.min(r.left, window.innerWidth - panel.offsetWidth - 8))}px`;
+  placeBeside(panel, anchor);
   fillCategorySelect(document.getElementById("add-panel-category"), VIEW.tag, "Untagged");
   setTimeout(() => document.getElementById("add-panel-url").focus(), 30);
 }
@@ -946,7 +963,7 @@ async function submitAddPanel(ev) {
 }
 
 function initAddPanel() {
-  const btn = document.getElementById("topbar-add");
+  const btn = document.getElementById("rail-add");
   const panel = document.getElementById("add-panel");
   if (!btn || !panel) return;
   btn.addEventListener("click", ev => {
@@ -1009,10 +1026,9 @@ function renderSidebar() {
   if (!ul) return;
 
   const activeTag = VIEW.tag ? String(VIEW.tag) : null;
-  // chevron is a parent's toggle; other top-level rows get a spacer so names line up
-  const row = (id, name, color, badge, menu, lead = "", cls = "") => `
+  // chevron is a parent's toggle, at the row's right end; other rows get a spacer so the ⋮ lines up
+  const row = (id, name, color, badge, menu, fold = "", cls = "") => `
     <li ${id === "" ? "" : `data-order="${id}"`} class="${cls}">
-      ${lead}
       <a href="${categoryPath(id)}" ${id === "" ? "" : `data-cat="${id}"`}
          class="sidebar-cat-link ${!_openNoteId && (id === "" ? VIEW.uncategorised : activeTag === String(id)) ? "active" : ""}">
         ${folderSvg(color)}
@@ -1026,6 +1042,7 @@ function renderSidebar() {
         </button>
         <div class="row-menu">${menu}</div>
       </div>` : ""}
+      ${fold}
     </li>`;
 
   const menuItem = (action, id, icon, label, extra = "") => `
@@ -1086,12 +1103,12 @@ function renderSidebar() {
       : (above && !kids.length
           ? menuItem("nest", t.id, "corner-down-right", "Child of above", `data-parent="${above.id}"`)
           : "");
-    const lead = MODE === "notes" || kids.length ? chevron(t.id) : spacer;
+    const fold = MODE === "notes" || kids.length ? chevron(t.id) : spacer;
     return row(t.id, escHtml(t.name), escHtml(t.color), "",
       menuItem("rename", t.id, "square-pen", "Edit") + nest +
       menuItem("export", t.id, "download", "Export data") +
       menuItem("delete", t.id, "trash-2", "Delete"),
-      lead, parentId != null ? "tag-child" : "");
+      fold, parentId != null ? "tag-child" : "");
   };
 
   // ponytail: the badge counts untagged links only, so in Notes the row always shows

@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=118">
+  <link rel="stylesheet" href="/static/style.css?v=130">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <meta name="tether-uuid" content="{{ tether_uuid | default('') }}">
   <script>
@@ -17,17 +17,13 @@
   </script>
 </head>
 <body>
-  <header class="topbar">
-    <a href="/" class="topbar-logo">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.8">
-        <circle cx="6" cy="12" r="3"/><circle cx="18" cy="12" r="3"/><line x1="9" y1="12" x2="15" y2="12"/>
-      </svg>
-      <span>Tether</span>
-    </a>
 
+  <div class="app-shell">
+  {% set mode = 'notes' if view and view.type in ('notes', 'editor') else ('links' if view else '') %}
+  <nav class="rail" aria-label="Category">
     {% if view %}
     <div class="add-link-wrap">
-      <button type="button" class="topbar-add" id="topbar-add" title="Add link">
+      <button type="button" class="rail-btn" id="rail-add" title="Add link">
         <i data-lucide="plus"></i>
       </button>
       <div class="add-panel" id="add-panel">
@@ -73,29 +69,26 @@
         </form>
       </div>
     </div>
-    <div class="topbar-search search-box">
+    <button type="button" class="rail-btn" id="search-btn" title="Search">
+      <i data-lucide="search"></i>
+    </button>
+    <div class="search-box search-pop" id="search-pop">
       <i data-lucide="search"></i>
       <input type="text" id="search-input" placeholder="Search" autocomplete="off">
     </div>
     {% endif %}
-
-    <div class="topbar-actions">
-      <a href="/settings" class="sidebar-add-btn {% if request.url.path == '/settings' %}active{% endif %}" title="Settings" onclick="{% if request.url.path == '/settings' %}settingsGoBack(event){% endif %}">
-        <i data-lucide="settings"></i>
-      </a>
-      <span class="topbar-avatar" title="Signed in">T</span>
-    </div>
-  </header>
-
-  <div class="app-shell">
-  {% set mode = 'notes' if view and view.type in ('notes', 'editor') else ('links' if view else '') %}
-  <nav class="rail" aria-label="Category">
     <a href="/link" class="rail-btn {% if mode == 'links' %}active{% endif %}" data-mode="links" title="Links">
       <i data-lucide="link"></i>
     </a>
     <a href="/note" class="rail-btn {% if mode == 'notes' %}active{% endif %}" data-mode="notes" title="Notes">
       <i data-lucide="file-text"></i>
     </a>
+    <div class="rail-bottom">
+      <a href="/settings" class="rail-btn {% if request.url.path == '/settings' %}active{% endif %}" title="Settings" onclick="{% if request.url.path == '/settings' %}settingsGoBack(event){% endif %}">
+        <i data-lucide="settings"></i>
+      </a>
+      <span class="rail-avatar" title="Signed in">T</span>
+    </div>
   </nav>
 
   <nav class="sidebar">
@@ -240,7 +233,7 @@
     </button>
   </div>
 
-  <script src="/static/app.js?v=119"></script>
+  <script src="/static/app.js?v=121"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
