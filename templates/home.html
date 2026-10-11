@@ -115,24 +115,7 @@
   </div>
 </dialog>
 
-<dialog id="note-category-modal" class="modal">
-  <div class="modal-content">
-    <h2>Change tag</h2>
-    <form id="note-category-form">
-      <div class="form-group">
-        <label for="note-category-select">Tag</label>
-        <select id="note-category-select" class="edit-tag-select">
-          <option value="0">No tag</option>
-        </select>
-      </div>
-      <div class="modal-actions">
-        <button type="button" class="btn-ghost" onclick="document.getElementById('note-category-modal').close()">Cancel</button>
-        <button type="submit" class="btn-primary">Save</button>
-      </div>
-    </form>
-  </div>
-</dialog>
 {% endblock %}
 {% block scripts %}
-<script type="module" src="/static/notes.js?v=109"></script>
+<script type="module" src="/static/notes.js?v=110"></script>
 {% endblock %}

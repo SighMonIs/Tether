@@ -343,10 +343,25 @@ function openNewTagModal() {
   setTimeout(() => document.getElementById("new-tag-name")?.focus(), 50);
 }
 
+// on a tag's page the dialog also handles nesting, export and delete;
+// settings has its own buttons for those, so they only show here
 function openEditTag(id, name, color) {
   document.getElementById("edit-tag-id").value = id;
   document.getElementById("edit-tag-name").value = name;
   document.getElementById("edit-tag-color").value = color;
+  const t = _sidebarTags.find(x => x.id === Number(id));
+  document.querySelectorAll(".edit-tag-extra").forEach(el => { el.hidden = !t; });
+  if (t) {
+    // one level deep: only top-level tags can be parents, and a parent can't become a child
+    const hasKids = _sidebarTags.some(x => x.parent_id === t.id);
+    const sel = document.getElementById("edit-tag-parent");
+    sel.innerHTML = `<option value="">None (top level)</option>` + _sidebarTags
+      .filter(x => !x.parent_id && x.id !== t.id)
+      .map(p => `<option value="${p.id}" ${p.id === t.parent_id ? "selected" : ""}>${escHtml(p.name)}</option>`)
+      .join("");
+    sel.disabled = hasKids;
+    sel.title = hasKids ? "This tag has children of its own" : "";
+  }
   document.getElementById("edit-tag-modal").showModal();
   setTimeout(() => document.getElementById("edit-tag-name")?.focus(), 50);
 }
@@ -357,15 +372,42 @@ async function saveTag(e) {
   const name = document.getElementById("edit-tag-name").value.trim();
   const color = document.getElementById("edit-tag-color").value;
   if (!name) return;
+  const body = { name, color };
+  const t = _sidebarTags.find(x => x.id === Number(id));
+  const parent = document.getElementById("edit-tag-parent");
+  if (t && !parent.disabled) body.parent_id = parent.value ? Number(parent.value) : null;
   const res = await fetch(`/api/tags/${id}`, {
     method: "PATCH",
     headers: headers(),
-    body: JSON.stringify({ name, color }),
+    body: JSON.stringify(body),
   });
-  if (res.ok) {
-    toast("Tag updated");
-    setTimeout(() => location.reload(), 400);
+  if (!res.ok) { toast("Couldn't save that tag"); return; }
+  document.getElementById("edit-tag-modal").close();
+  toast("Tag updated");
+  if (!t) { setTimeout(() => location.reload(), 400); return; }
+  if (body.parent_id) {
+    // open the parent so the tag doesn't vanish into a closed group
+    const f = foldState();
+    MODE === "notes" ? f.add(body.parent_id) : f.delete(body.parent_id);
+    saveFoldState(f);
   }
+  // a rename or move changes the tag's path, so follow it rather than reload into a redirect
+  await loadSidebarCats();
+  const tag = currentTagId();
+  if (tag !== null) {
+    history.replaceState({}, "", categoryPath(tag));
+    setViewTag(tag);
+  }
+}
+
+function exportEditedTag() {
+  doExport("all", document.getElementById("edit-tag-id").value);
+}
+
+function deleteEditedTag() {
+  document.getElementById("edit-tag-modal").close();
+  openTagDeleteModal(Number(document.getElementById("edit-tag-id").value),
+    document.getElementById("edit-tag-name").value);
 }
 
 async function createTag(e) {
@@ -1027,7 +1069,7 @@ function renderSidebar() {
 
   const activeTag = VIEW.tag ? String(VIEW.tag) : null;
   // chevron is a parent's toggle, at the row's right end; other rows get a spacer so the ⋮ lines up
-  const row = (id, name, color, badge, menu, fold = "", cls = "") => `
+  const row = (id, name, color, badge, fold = "", cls = "") => `
     <li ${id === "" ? "" : `data-order="${id}"`} class="${cls}">
       <a href="${categoryPath(id)}" ${id === "" ? "" : `data-cat="${id}"`}
          class="sidebar-cat-link ${!_openNoteId && (id === "" ? VIEW.uncategorised : activeTag === String(id)) ? "active" : ""}">
@@ -1035,21 +1077,8 @@ function renderSidebar() {
         <span class="sidebar-cat-name">${name}</span>
         ${badge}
       </a>
-      ${menu ? `
-      <div class="row-menu-wrap">
-        <button class="row-overflow" type="button" title="More">
-          <i data-lucide="ellipsis-vertical"></i>
-        </button>
-        <div class="row-menu">${menu}</div>
-      </div>` : ""}
       ${fold}
     </li>`;
-
-  const menuItem = (action, id, icon, label, extra = "") => `
-    <button type="button" class="row-menu-item ${action === "delete" ? "danger" : ""}"
-            data-action="${action}" data-id="${id}" ${extra}>
-      <i data-lucide="${icon}"></i> ${label}
-    </button>`;
 
   // a child whose parent is gone shows at the top level
   const isTop = t => !t.parent_id || !_sidebarTags.some(p => p.id === t.parent_id);
@@ -1078,37 +1107,14 @@ function renderSidebar() {
             <i data-lucide="${n.link_id ? "link" : "file-text"}"></i>
             <span class="sidebar-cat-name">${escHtml(n.title || "Untitled")}</span>
           </a>
-          <div class="row-menu-wrap">
-            <button class="row-overflow" type="button" title="More">
-              <i data-lucide="ellipsis-vertical"></i>
-            </button>
-            <div class="row-menu">
-              <button type="button" class="row-menu-item" data-note-action="tag" data-id="${n.id}" data-tag="${tagId}">
-                <i data-lucide="tag"></i> Change tag
-              </button>
-              <button type="button" class="row-menu-item danger" data-note-action="delete" data-id="${n.id}">
-                <i data-lucide="trash-2"></i> Delete
-              </button>
-            </div>
-          </div>
         </li>`).join("")
       || `<li class="sidebar-note sidebar-empty ${deep}">No notes</li>`;
   };
 
+  // editing a tag (name, parent, export, delete) lives behind the pencil on its page
   const tagRow = (t, parentId, kids) => {
-    // nesting is one level deep, so a parent can't become a child itself
-    const above = tops[tops.indexOf(t) - 1];
-    const nest = parentId != null
-      ? menuItem("unnest", t.id, "corner-up-left", "Move out of parent")
-      : (above && !kids.length
-          ? menuItem("nest", t.id, "corner-down-right", "Child of above", `data-parent="${above.id}"`)
-          : "");
     const fold = MODE === "notes" || kids.length ? chevron(t.id) : spacer;
-    return row(t.id, escHtml(t.name), escHtml(t.color), "",
-      menuItem("rename", t.id, "square-pen", "Edit") + nest +
-      menuItem("export", t.id, "download", "Export data") +
-      menuItem("delete", t.id, "trash-2", "Delete"),
-      fold, parentId != null ? "tag-child" : "");
+    return row(t.id, escHtml(t.name), escHtml(t.color), "", fold, parentId != null ? "tag-child" : "");
   };
 
   // ponytail: the badge counts untagged links only, so in Notes the row always shows
@@ -1117,7 +1123,7 @@ function renderSidebar() {
   ul.innerHTML =
     (showUncat
       ? withNotes("u", row("", "Untagged", "var(--n-500)",
-            MODE === "links" ? `<span class="sidebar-cat-badge">${_uncatCount}</span>` : "", "",
+            MODE === "links" ? `<span class="sidebar-cat-badge">${_uncatCount}</span>` : "",
             MODE === "notes" ? chevron("u") : spacer))
       : "") +
     tops.map(t => {
@@ -1131,37 +1137,24 @@ function renderSidebar() {
   ul.querySelectorAll("[data-toggle]").forEach(btn => {
     btn.addEventListener("click", () => toggleFold(btn.dataset.toggle === "u" ? "u" : Number(btn.dataset.toggle)));
   });
-  // a tag swaps the content area in place: Links shows its links, Notes just
-  // opens or closes the tag (its notes are right there in the sidebar)
+  // a tag swaps the content area in place for its page of links or notes
   ul.querySelectorAll("a.sidebar-cat-link:not([data-note])").forEach(a => {
     a.addEventListener("click", ev => {
       if (ev.ctrlKey || ev.metaKey || ev.shiftKey || !document.getElementById("links-container")) return;
       ev.preventDefault();
       const id = a.dataset.cat ?? "";
-      if (MODE === "notes") toggleFold(id === "" ? "u" : Number(id));
+      // every click folds or unfolds the tag, as well as showing its page
+      const key = id === "" ? "u" : Number(id);
+      if (MODE === "notes" || _sidebarTags.some(t => t.parent_id === key)) {
+        const f = foldState();
+        f.has(key) ? f.delete(key) : f.add(key);
+        saveFoldState(f);
+      }
+      if (MODE === "notes") showNotesTag(id, a.getAttribute("href"));
       else showLinksTag(id, a.getAttribute("href"));
     });
   });
-  // the note menus need notes.js, which only the home page loads
-  ul.querySelectorAll("[data-note-action]").forEach(btn => {
-    btn.addEventListener("click", () => {
-      closeRowMenus();
-      if (btn.dataset.noteAction === "tag") window.openNoteCategory?.(btn.dataset.id, btn.dataset.tag);
-      else window.deleteNoteById?.(btn.dataset.id);
-    });
-  });
-  // a note opens in the editor in place, whichever tag it's in
-  ul.querySelectorAll("[data-note]").forEach(a => {
-    a.addEventListener("click", ev => {
-      if (ev.ctrlKey || ev.metaKey || ev.shiftKey || !window.openNoteById) return;
-      ev.preventDefault();
-      setViewTag(a.dataset.tag);
-      if (location.pathname !== a.getAttribute("href")) history.pushState({}, "", a.getAttribute("href"));
-      window.openNoteById(a.dataset.note);
-    });
-  });
-
-  bindRowMenus(ul);
+  bindNoteLinks(ul);
   initListDrag(ul, "[data-cat]", "cat", async ids => {
     await fetch("/api/tags/reorder", {
       method: "PATCH", headers: headers(),
@@ -1207,6 +1200,29 @@ function setViewTag(tagId) {
   setPageTitle(t ? t.name : "Untagged");
 }
 
+// a note opens in the editor in place, whichever tag it's in
+function bindNoteLinks(root) {
+  root.querySelectorAll("a[data-note]").forEach(a => {
+    a.addEventListener("click", ev => {
+      if (ev.ctrlKey || ev.metaKey || ev.shiftKey || !window.openNoteById) return;
+      ev.preventDefault();
+      setViewTag(a.dataset.tag);
+      if (location.pathname !== a.getAttribute("href")) history.pushState({}, "", a.getAttribute("href"));
+      window.openNoteById(a.dataset.note);
+    });
+  });
+}
+
+function showNotesTag(tagId, href) {
+  // already on this tag's page: only the fold changed
+  if (currentTagId() === tagId && !_openNoteId) { renderSidebar(); return; }
+  setViewTag(tagId);
+  if (location.pathname !== href) history.pushState({}, "", href);
+  _openNoteId = null;
+  renderSidebar();
+  window.showNotesTagView?.();
+}
+
 async function showLinksTag(tagId, href) {
   setViewTag(tagId);
   if (location.pathname !== href) history.pushState({}, "", href);
@@ -1237,20 +1253,6 @@ function foldState() {
 }
 function saveFoldState(set) {
   try { localStorage.setItem(FOLD_KEY, JSON.stringify([...set])); } catch {}
-}
-
-async function setTagParent(id, parentId) {
-  const res = await fetch(`/api/tags/${id}`, {
-    method: "PATCH", headers: headers(), body: JSON.stringify({ parent_id: parentId }),
-  });
-  if (!res.ok) { toast("Couldn't move that tag"); return; }
-  if (parentId != null) {
-    // open the parent so the tag doesn't vanish into a closed group
-    const f = foldState();
-    MODE === "notes" ? f.add(parentId) : f.delete(parentId);
-    saveFoldState(f);
-  }
-  await loadSidebarCats();
 }
 
 /* ── Drag to reorder ─────────────────────────────────────── */
@@ -1324,44 +1326,6 @@ window.reloadSidebarNotes = async () => {
 // rather than duplicating that resolution here.
 window.addEventListener("popstate", () => location.reload());
 
-function bindRowMenus(ul) {
-  ul.querySelectorAll(".row-overflow").forEach(btn => {
-    btn.addEventListener("click", () => toggleRowMenu(btn));
-  });
-  ul.querySelectorAll('[data-action="rename"]').forEach(btn => {
-    btn.addEventListener("click", () => {
-      closeRowMenus();
-      const t = _sidebarTags.find(x => x.id === Number(btn.dataset.id));
-      if (t) openEditTag(t.id, t.name, t.color);
-    });
-  });
-  ul.querySelectorAll('[data-action="nest"]').forEach(btn => {
-    btn.addEventListener("click", () => {
-      closeRowMenus();
-      setTagParent(Number(btn.dataset.id), Number(btn.dataset.parent));
-    });
-  });
-  ul.querySelectorAll('[data-action="unnest"]').forEach(btn => {
-    btn.addEventListener("click", () => {
-      closeRowMenus();
-      setTagParent(Number(btn.dataset.id), null);
-    });
-  });
-  ul.querySelectorAll('[data-action="export"]').forEach(btn => {
-    btn.addEventListener("click", () => {
-      closeRowMenus();
-      doExport("all", btn.dataset.id);
-    });
-  });
-  ul.querySelectorAll('[data-action="delete"]').forEach(btn => {
-    btn.addEventListener("click", () => {
-      closeRowMenus();
-      const t = _sidebarTags.find(x => x.id === Number(btn.dataset.id));
-      if (t) openTagDeleteModal(t.id, t.name);
-    });
-  });
-}
-
 let _sidebarLoaded = false;
 async function loadSidebarCats() {
   const ul = document.getElementById("sidebar-cats");
@@ -1395,28 +1359,42 @@ async function loadSidebarCats() {
 }
 
 /* ── Content type view ───────────────────────────────────── */
-function noteRow(note) {
+// a note on its tag's page, laid out like a link row
+function noteCardHtml(n) {
+  const tagId = n.tag_id ? String(n.tag_id) : "";
   return `
-    <div class="ov-row" onclick="window.openNoteById && window.openNoteById('${note.id}')">
-      <span class="ov-title">${escHtml(note.title || "Untitled")}</span>
-      <span class="ov-date">${friendlyDate(note.updated_at)}</span>
-    </div>`;
+    <article class="link-row" data-id="${n.id}">
+      ${_selectMode
+        ? `<label class="link-pick">
+             <input type="checkbox" class="link-check" value="${n.id}" ${_selected.has(n.id) ? "checked" : ""}>
+           </label>`
+        : `<span class="link-thumb"><i data-lucide="${n.link_id ? "link" : "file-text"}"></i></span>`}
+      <span class="link-main">
+        <a class="link-title" href="${categoryPath(tagId, `/${n.slug}`)}" data-note="${n.id}" data-tag="${tagId}">${escHtml(n.title || "Untitled")}</a>
+        <span class="link-url">Edited ${friendlyDate(n.updated_at)}</span>
+      </span>
+      <span class="link-meta">
+        <span class="link-date">${friendlyDate(n.created_at)}</span>
+      </span>
+    </article>`;
 }
 
 let _selectMode = false;
 let _selected = new Set();
 
 let _ctData = null;                                  // the fetched bucket, unfiltered
+let _ctReload = () => {};                            // refetches whichever page is showing
+const ctKind = () => (_ctData && _ctData.content_type.kind) || "links";
+const ctItems = () => (_ctData && _ctData[ctKind()]) || [];
 let _ctFilter = { sites: [], from: "", to: "" };
 
 function ctFilterCount() {
   return (_ctFilter.sites.length ? 1 : 0) + [_ctFilter.from, _ctFilter.to].filter(Boolean).length;
 }
 
-function filteredCtLinks() {
-  const links = (_ctData && _ctData.links) || [];
-  return links.filter(l => {
-    if (_ctFilter.sites.length && !_ctFilter.sites.includes(getDomain(l.url))) return false;
+function filteredCtItems() {
+  return ctItems().filter(l => {
+    if (_ctFilter.sites.length && l.url && !_ctFilter.sites.includes(getDomain(l.url))) return false;
     // created_at is "YYYY-MM-DD HH:MM:SS", so a plain string compare on the date works
     const day = (l.created_at || "").slice(0, 10);
     if (_ctFilter.from && day < _ctFilter.from) return false;
@@ -1425,8 +1403,10 @@ function filteredCtLinks() {
   });
 }
 
+// notes have no website, so their filter is just the dates
 function ctFilterPanel() {
   const links = (_ctData && _ctData.links) || [];
+  const noun = ctKind() === "notes" ? "Created" : "Saved";
   const counts = {};
   for (const l of links) {
     const d = getDomain(l.url);
@@ -1440,7 +1420,7 @@ function ctFilterPanel() {
         <i data-lucide="list-filter"></i> Filter${n ? ` · ${n}` : ""}
       </button>
       <div class="filter-panel" id="ct-filter-panel">
-        <div class="add-field">
+        ${sites.length ? `<div class="add-field">
           <div class="filter-head">
             <span>Websites</span>
             <span class="filter-pick" id="site-pick"></span>
@@ -1455,14 +1435,14 @@ function ctFilterPanel() {
               </label>`).join("")}
           </div>
           <p class="form-note">None ticked means every website.</p>
-        </div>
+        </div>` : ""}
         <div class="filter-dates">
           <label class="add-field">
-            <span>Saved from</span>
+            <span>${noun} from</span>
             <input type="date" id="filter-from" value="${_ctFilter.from}">
           </label>
           <label class="add-field">
-            <span>Saved to</span>
+            <span>${noun} to</span>
             <input type="date" id="filter-to" value="${_ctFilter.to}">
           </label>
         </div>
@@ -1484,9 +1464,9 @@ function ctActionsMenu() {
         Actions${n ? ` · ${n}` : ""} <i data-lucide="chevron-down"></i>
       </button>
       <div class="row-menu" id="bulk-actions-menu">
-        <button type="button" class="row-menu-item" data-bulk="export">
+        ${ctKind() === "links" ? `<button type="button" class="row-menu-item" data-bulk="export">
           <i data-lucide="download"></i> Export selected
-        </button>
+        </button>` : ""}
         <button type="button" class="row-menu-item" data-bulk="category">
           <i data-lucide="tag"></i> Change tag
         </button>
@@ -1499,10 +1479,11 @@ function ctActionsMenu() {
 
 // Select all grows leftwards from the checkbox, so the checkbox itself never moves
 function ctSelectControls() {
+  const label = `Select ${ctKind()}`;
   return `
     ${_selectMode ? `<button type="button" class="btn-ghost" id="select-all">Select all</button>` : ""}
-    <label class="select-toggle" title="Select links">
-      <input type="checkbox" id="select-mode" aria-label="Select links" ${_selectMode ? "checked" : ""}>
+    <label class="select-toggle" title="${label}">
+      <input type="checkbox" id="select-mode" aria-label="${label}" ${_selectMode ? "checked" : ""}>
     </label>`;
 }
 
@@ -1519,7 +1500,7 @@ function bindCtSelect(pane, ctId) {
 
   // only what the filter is currently showing
   pane.querySelector("#select-all")?.addEventListener("click", () => {
-    const visible = filteredCtLinks().map(l => l.id);
+    const visible = filteredCtItems().map(l => l.id);
     const allOn = visible.every(id => _selected.has(id));
     visible.forEach(id => allOn ? _selected.delete(id) : _selected.add(id));
     renderCtPane(ctId);
@@ -1551,13 +1532,16 @@ function bindCtSelect(pane, ctId) {
   }
 }
 
-function selectedLinks() {
-  return ((_ctData && _ctData.links) || []).filter(l => _selected.has(l.id));
+function selectedItems() {
+  return ctItems().filter(l => _selected.has(l.id));
 }
 
+const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+
 async function runBulkAction(action, ctId) {
-  const links = selectedLinks();
+  const links = selectedItems();
   if (!links.length) return;
+  const word = ctKind() === "notes" ? "note" : "link";
 
   if (action === "export") {
     // same shape as /api/export, built from what is already in hand
@@ -1584,23 +1568,21 @@ async function runBulkAction(action, ctId) {
   if (action === "category") {
     _bulkCtId = ctId;
     fillCategorySelect(document.getElementById("bulk-category-select"), "");
-    document.getElementById("bulk-category-title").textContent =
-      `Move ${links.length} link${links.length === 1 ? "" : "s"}`;
+    document.getElementById("bulk-category-title").textContent = `Move ${plural(links.length, word)}`;
     document.getElementById("bulk-category-modal").showModal();
     return;
   }
 
   if (action === "delete") {
-    const ok = await showConfirm(
-      `Delete ${links.length} link${links.length === 1 ? "" : "s"}? This can't be undone.`);
+    const ok = await showConfirm(`Delete ${plural(links.length, word)}? This can't be undone.`);
     if (!ok) return;
     for (const l of links) {
-      await fetch(`/api/links/${l.id}`, { method: "DELETE", headers: headers() });
+      await fetch(`/api/${word}s/${l.id}`, { method: "DELETE", headers: headers() });
     }
     _selected.clear();
     toast(`Deleted ${links.length}`);
     await loadSidebarCats();
-    renderContentTypeView(ctId);
+    _ctReload();
   }
 }
 
@@ -1610,18 +1592,20 @@ async function submitBulkCategory(ev) {
   ev.preventDefault();
   const id = document.getElementById("bulk-category-select").value;
   const cat = _sidebarTags.find(t => String(t.id) === String(id));
-  const links = selectedLinks();
-  for (const l of links) {
-    await fetch(`/api/links/${l.id}`, {
+  const items = selectedItems();
+  const notes = ctKind() === "notes";
+  for (const l of items) {
+    // a note takes the tag's id (0 = none), a link the tag's name
+    await fetch(`/api/${notes ? "notes" : "links"}/${l.id}`, {
       method: "PATCH", headers: headers(),
-      body: JSON.stringify({ tags: cat ? [cat.name] : [] }),
+      body: JSON.stringify(notes ? { tag_id: cat ? cat.id : 0 } : { tags: cat ? [cat.name] : [] }),
     });
   }
   document.getElementById("bulk-category-modal").close();
   _selected.clear();
-  toast(`Moved ${links.length} link${links.length === 1 ? "" : "s"}`);
+  toast(`Moved ${plural(items.length, notes ? "note" : "link")}`);
   await loadSidebarCats();
-  renderContentTypeView(_bulkCtId);
+  _ctReload();
 }
 
 function sitePickHtml(total, checked) {
@@ -1686,36 +1670,34 @@ function renderCtPane(ctId) {
   const ct = _ctData.content_type;
   const kind = ct.kind;
   // headed by the tag it belongs to, not the bucket's own name ("Links")
-  const heading = _sidebarTags.find(t => t.id === ct.tag_id)?.name || ct.title;
-  const links = kind === "links" ? filteredCtLinks() : [];
+  const tag = _sidebarTags.find(t => t.id === ct.tag_id);
+  const heading = tag?.name || ct.title;
+  const items = filteredCtItems();
   const n = ctFilterCount();
 
-  const head = kind === "links" ? `
+  const head = `
     <div class="ct-head">
-      <h1>${escHtml(heading)}</h1>
+      <div class="ct-title">
+        <h1>${escHtml(heading)}</h1>
+        ${tag ? `<button type="button" class="ct-edit" id="ct-edit-tag" title="Edit tag"><i data-lucide="pencil"></i></button>` : ""}
+      </div>
       <div class="ct-head-mid">${ctActionsMenu()}</div>
       <div class="ct-head-right">
         ${ctSelectControls()}
         ${ctFilterPanel()}
       </div>
-    </div>` : `
-    <div class="ct-head"><h1>${escHtml(heading)}</h1></div>`;
+    </div>`;
 
-  let body;
-  if (kind === "links") {
-    body = links.map(l => linkCardHtml(l, true)).join("")
-      || `<div class="empty-state">${n ? "No links match that filter." : "No links in here yet."}</div>`;
-    if (n) {
-      body = `<div class="filter-summary">Showing ${links.length} of ${_ctData.links.length}</div>` + body;
-    }
-  } else {
-    body = _ctData.notes.map(noteRow).join("")
-      || '<div class="empty-state">No notes in here yet.</div>';
-  }
+  let body = items.map(l => kind === "links" ? linkCardHtml(l, true) : noteCardHtml(l)).join("")
+    || `<div class="empty-state">${n ? `No ${kind} match that filter.` : `No ${kind} in here yet.`}</div>`;
+  if (n) body = `<div class="filter-summary">Showing ${items.length} of ${ctItems().length}</div>` + body;
 
   pane.innerHTML = head + body;
   bindLinkRowMenus(pane);
-  if (kind === "links") { bindCtFilter(pane, ctId); bindCtSelect(pane, ctId); }
+  bindNoteLinks(pane);
+  bindCtFilter(pane, ctId);
+  bindCtSelect(pane, ctId);
+  pane.querySelector("#ct-edit-tag")?.addEventListener("click", () => openEditTag(tag.id, tag.name, tag.color));
   lucide.createIcons();
 }
 
@@ -1726,6 +1708,7 @@ async function renderContentTypeView(ctId) {
   const res = await fetch(`/api/content-types/${ctId}/items`, { headers: headers() });
   if (!res.ok) { pane.innerHTML = '<div class="empty-state">Not found.</div>'; return; }
   _ctData = await res.json();
+  _ctReload = () => renderContentTypeView(ctId);
   _ctFilter = { sites: [], from: "", to: "" };   // a fresh bucket starts unfiltered
   _selectMode = false;
   _selected.clear();
@@ -1733,6 +1716,29 @@ async function renderContentTypeView(ctId) {
 }
 
 window.renderContentTypeView = renderContentTypeView;
+
+// a Notes tag's page: the same pane, listing the notes in the tag on screen
+async function renderNotesTag() {
+  const pane = document.getElementById("ct-pane");
+  const tag = currentTagId();
+  if (!pane || tag === null) return;
+  pane.innerHTML = '<div class="loading-state">Loading…</div>';
+  const qs = tag === "" ? "uncategorised=true" : `tag=${tag}`;
+  const res = await fetch(`/api/notes?${qs}`, { headers: headers() });
+  if (currentTagId() !== tag) return;            // moved on while this loaded
+  _ctData = {
+    content_type: { id: null, kind: "notes", tag_id: tag === "" ? null : Number(tag), title: "Untagged" },
+    links: [],
+    notes: res.ok ? await res.json() : [],
+  };
+  _ctReload = renderNotesTag;
+  _ctFilter = { sites: [], from: "", to: "" };
+  _selectMode = false;
+  _selected.clear();
+  renderCtPane(null);
+}
+
+window.renderNotesTag = renderNotesTag;
 
 function setPageTitle(title) {
   document.title = `${title} — Tether`;

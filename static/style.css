@@ -28,6 +28,8 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+/* form controls don't inherit the page font by default (they fell back to Arial) */
+button, input, select, textarea { font-family: inherit; }
 
 /* ── Lucide icons ────────────────────────────────────────── */
 .lucide { width: 1em; height: 1em; stroke-width: 1.75; }
@@ -341,13 +343,18 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 2px 4px 8px 8px;
+  /* bottom: border level with the page head's, which is taller (Filter button);
+     the negative sides run the border out over the sidebar's 10px padding */
+  padding: 16px 14px 13px 18px;
+  margin: 0 -10px 8px;
+  border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+/* same type as the page title (.ct-head h1), only the colour differs */
 .sidebar-head-title {
   font-size: 16px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-weight: 500;
+  letter-spacing: -0.01em;
   color: var(--subtext);
 }
 .sidebar-head .row-overflow { opacity: 1; }
@@ -374,7 +381,7 @@ body {
 .tag-chevron:hover { color: var(--text); }
 .sidebar-cats li.tag-child { padding-left: 18px; }
 /* a note's icon sits under its tag's folder */
-.sidebar-cats li.sidebar-note { padding-left: 18px; padding-right: 20px; }
+.sidebar-cats li.sidebar-note { padding-left: 18px; }
 .sidebar-cats li.sidebar-note.deep { padding-left: 36px; }
 .sidebar-cats li.sidebar-note .sidebar-cat-link i { width: 14px; height: 14px; flex-shrink: 0; }
 .sidebar-cats li.sidebar-empty { padding: 4px 8px 4px 26px; font-size: 12px; color: var(--subtext); }
@@ -809,7 +816,7 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
 /* ── Content type view ───────────────────────────────────── */
 .ct-pane {
   max-width: var(--content-w);
-  padding: 1.25rem 1rem 2rem;
+  padding: 24px 1rem 2rem;   /* top: level with the sidebar heading */
   display: flex;
   flex-direction: column;
   gap: 0.75rem;
@@ -819,7 +826,20 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 0.75rem;
+  position: relative;
+  padding-bottom: 9px;
   margin-bottom: 0.25rem;
+}
+/* the pane is capped at --content-w, so the border is drawn from the pane's
+   left edge across the whole column (100cqw = #ct-view's width) */
+#ct-view { container-type: inline-size; }
+.ct-head::after {
+  content: "";
+  position: absolute;
+  left: -1rem;              /* the pane's side padding */
+  width: 100cqw;
+  bottom: 0;
+  border-bottom: 1px solid var(--border);
 }
 .ct-head-mid { display: flex; justify-content: center; }
 .ct-head-right {
@@ -829,6 +849,25 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
   gap: 0.6rem;
 }
 .ct-head h1 { font-size: 16px; font-weight: 500; }
+.ct-title { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.ct-edit {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--n-500);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.ct-edit .lucide { width: 14px; height: 14px; }
+.ct-edit:hover { background: var(--surface2); color: var(--text); }
+.edit-tag-extra[hidden] { display: none; }
+.edit-tag-delete { margin-right: auto; }
 .ct-head .btn-primary { justify-self: end; }
 
 .select-toggle {
@@ -1784,7 +1823,7 @@ code {
 }
 @media (min-width: 769px) and (max-width: 1024px) {
   :root { --sidebar-w: 200px; }
-  .main-content { padding: 1.5rem 1.25rem; }
+  .main-content { padding: 0 0 1.5rem; }   /* sides and top come from the panes, like on desktop */
 }
 
 /* ── Toast ───────────────────────────────────────────────── */

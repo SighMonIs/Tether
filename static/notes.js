@@ -27,9 +27,6 @@ const statusEl = document.getElementById("notes-save-status");
 const createdEl = document.getElementById("note-created");
 const bubbleEl = document.getElementById("bubble-toolbar");
 const linkBarEl = document.getElementById("link-toolbar");
-const categoryModal = document.getElementById("note-category-modal");
-const categorySelect = document.getElementById("note-category-select");
-const categoryForm = document.getElementById("note-category-form");
 
 const urlParams = new URLSearchParams(location.search);
 
@@ -41,19 +38,21 @@ const linksView = document.getElementById("links-view");
 
 const VIEW = window.TETHER_VIEW || { tag: null, uncategorised: false, type: "all", ct: null, note: null };
 
-let currentView = "links";  // "links" | "notes" | "ct" | "editor"
+let currentView = "links";  // "links" | "notes" | "ct" | "tag" | "editor"
 let currentCtId = VIEW.ct ? String(VIEW.ct) : null;
 
 function setView(v, persist = true) {
   currentView = v;
   const editing = v === "editor";
   noteView.style.display = editing ? "" : "none";
-  if (ctView) ctView.style.display = v === "ct" ? "" : "none";
+  // "tag" is a Notes tag's page, drawn into the same pane as a links bucket
+  if (ctView) ctView.style.display = v === "ct" || v === "tag" ? "" : "none";
   notesEmptyView.style.display = v === "notes" ? "" : "none";
   linksView.style.display = v === "links" ? "" : "none";
   if (!editing) { hideBubble(); hideLinkBar(); }
   if (!editing && v !== "ct") window.setSidebarNote?.(null);
   if (v === "ct") window.renderContentTypeView?.(currentCtId);
+  if (v === "tag") window.renderNotesTag?.();
 }
 
 // app.js still calls this after a quick-add save
@@ -61,6 +60,7 @@ window.setShowingLinks = on => setView(on ? "links" : "notes");
 
 // swap the content area in place — the sidebar updates the URL itself
 window.showContentTypeView = ctId => { currentCtId = ctId; setView("ct"); };
+window.showNotesTagView = () => setView("tag");
 
 // read live: the sidebar moves between tags without a page load
 const filterTagId = () => VIEW.tag || null;
@@ -272,44 +272,12 @@ initLinkBar();
 
 titleInput.addEventListener("input", () => scheduleSave());
 
-let categoryModalNoteId = null;
-
-// the sidebar knows the tag of notes outside this page's list, so it passes it
-function openCategoryModal(noteId, tagId) {
-  const note = notesCache.find(n => n.id === noteId);
-  categoryModalNoteId = noteId;
-  categorySelect.value = tagId != null ? String(tagId || 0) : note?.tag ? String(note.tag.id) : "0";
-  categoryModal.showModal();
-}
-
-// the sidebar's per-note menu drives these
 window.createNoteInCategory = () => createNote();
-window.openNoteCategory = (noteId, tagId) => openCategoryModal(noteId, tagId);
-window.deleteNoteById = noteId => deleteNote(noteId);
-
-categoryForm.addEventListener("submit", async e => {
-  e.preventDefault();
-  if (!categoryModalNoteId) return;
-  const res = await fetch(`/api/notes/${categoryModalNoteId}`, {
-    method: "PATCH",
-    headers: authHeaders(),
-    body: JSON.stringify({ tag_id: Number(categorySelect.value) }),
-  });
-  if (res.ok) {
-    const note = await res.json();
-    const idx = notesCache.findIndex(n => n.id === note.id);
-    if (idx !== -1) notesCache[idx] = note;
-    // a note moved out of the tag on screen leaves its list
-    if (filterTagId() && note.tag_id !== filterTagId()) notesCache = notesCache.filter(n => n.id !== note.id);
-    window.reloadSidebarNotes?.();
-  }
-  categoryModal.close();
-});
 
 async function loadTags() {
   const res = await fetch("/api/tags?kind=notes", { headers: authHeaders(false) });
   allTags = res.ok ? await res.json() : [];
-  categorySelect.innerHTML = `<option value="0">No tag</option>` + window.tagOptions(allTags);
+  newNoteTag.innerHTML = `<option value="0">No tag</option>` + window.tagOptions(allTags);
 
   if (filterTagId()) {
     const tag = allTags.find(t => t.id === filterTagId());
@@ -393,7 +361,6 @@ const newNoteModal = document.getElementById("new-note-modal");
 const newNoteTag = document.getElementById("new-note-tag");
 
 function createNote() {
-  newNoteTag.innerHTML = categorySelect.innerHTML;   // the same Notes tags
   newNoteTag.value = String(filterTagId() || 0);
   newNoteModal.showModal();
   setTimeout(() => newNoteTag.focus(), 50);
@@ -439,25 +406,6 @@ window.createNoteFromLink = async function(title, url, linkId) {
 
 window.openNoteById = id => openNote(id);
 
-async function deleteNote(id) {
-  const ok = await window.showConfirm("Delete this note? This cannot be undone.");
-  if (!ok) return;
-  await fetch(`/api/notes/${id}`, { method: "DELETE", headers: authHeaders(false) });
-  notesCache = notesCache.filter(n => n.id !== id);
-  if (id === currentNoteId) {
-    currentNoteId = null;
-    suppressDirty = true;
-    titleInput.value = "";
-    editor.commands.setContent("");
-    setTimeout(() => { suppressDirty = false; }, 0);
-    setView("notes");
-    // the path named the deleted note; drop it back to the note's tag
-    const parts = location.pathname.split("/");
-    if (parts.length > 3) history.replaceState({}, "", parts.slice(0, -1).join("/"));
-  }
-  window.reloadSidebarNotes?.();
-}
-
 async function loadNotes() {
   const qs = new URLSearchParams();
   if (filterTagId()) qs.set("tag", filterTagId());
@@ -475,7 +423,9 @@ async function loadNotes() {
 
 // runs last, once the consts above are declared
 // the server already worked out which view the path means
-setView(["links", "notes", "ct"].includes(VIEW.type) ? VIEW.type : "links");
+// a Notes path naming a tag lands on that tag's page
+const tagged = VIEW.tag || VIEW.uncategorised;
+setView(VIEW.type === "notes" && tagged ? "tag" : ["links", "notes", "ct"].includes(VIEW.type) ? VIEW.type : "links");
 
 (async () => {
   await loadTags();
