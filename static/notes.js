@@ -52,7 +52,7 @@ function setView(v, persist = true) {
   if (!editing) { hideBubble(); hideLinkBar(); }
   if (!editing && v !== "ct") window.setSidebarNote?.(null);
   if (v === "ct") window.renderContentTypeView?.(currentCtId);
-  if (v === "tag") window.renderNotesTag?.();
+  if (v === "tag") window.renderTagPage?.();
 }
 
 // app.js still calls this after a quick-add save
@@ -270,7 +270,66 @@ function initBubbleToolbar() {
 initBubbleToolbar();
 initLinkBar();
 
-titleInput.addEventListener("input", () => scheduleSave());
+// the input sizes to its text (via the wrapper's hidden copy) so the pencil sits beside it
+const titleGrow = document.getElementById("note-title-grow");
+function setTitle(v) {
+  titleInput.value = v;
+  titleGrow.dataset.value = v || titleInput.placeholder;
+}
+titleInput.addEventListener("input", () => {
+  titleGrow.dataset.value = titleInput.value || titleInput.placeholder;
+  scheduleSave();
+});
+
+/* ── Edit note (tag, delete) ─────────────────────────────── */
+const noteEditModal = document.getElementById("note-edit-modal");
+const noteEditTag = document.getElementById("note-edit-tag");
+
+document.getElementById("note-edit-btn").addEventListener("click", () => {
+  if (!currentNoteId) return;
+  noteEditTag.innerHTML = newNoteTag.innerHTML;     // the same Notes tags
+  noteEditTag.value = String(filterTagId() || 0);
+  noteEditModal.showModal();
+});
+
+document.getElementById("note-edit-form").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const id = currentNoteId;
+  const tagId = Number(noteEditTag.value) || null;
+  noteEditModal.close();
+  if (!id || tagId === filterTagId()) return;
+  clearTimeout(saveTimeout);
+  await saveCurrentNote();
+  const res = await fetch(`/api/notes/${id}`, {
+    method: "PATCH",
+    headers: authHeaders(),
+    body: JSON.stringify({ tag_id: tagId || 0 }),
+  });
+  if (!res.ok) return;
+  const note = await res.json();
+  // follow the note into its new tag: sidebar, page title and path
+  await window.showNoteTag?.(tagId);
+  window.setSidebarNote?.(note.id, note.slug);
+});
+
+document.getElementById("note-edit-delete").addEventListener("click", async () => {
+  const id = currentNoteId;
+  noteEditModal.close();
+  if (!id || !await window.showConfirm("Delete this note? This cannot be undone.")) return;
+  clearTimeout(saveTimeout);
+  isDirty = false;
+  await fetch(`/api/notes/${id}`, { method: "DELETE", headers: authHeaders(false) });
+  notesCache = notesCache.filter(n => n.id !== id);
+  currentNoteId = null;
+  suppressDirty = true;
+  setTitle("");
+  editor.commands.setContent("");
+  setTimeout(() => { suppressDirty = false; }, 0);
+  // back to the tag it was in
+  await window.reloadSidebarNotes?.();
+  const tag = VIEW.uncategorised ? "" : String(VIEW.tag || "");
+  window.showNotesTag?.(tag, window.categoryPath?.(tag));
+});
 
 window.createNoteInCategory = () => createNote();
 
@@ -345,7 +404,7 @@ async function openNote(id, switchTab = true) {
   currentNoteId = id;
 
   suppressDirty = true;
-  titleInput.value = note.title === "Untitled" ? "" : note.title;
+  setTitle(note.title === "Untitled" ? "" : note.title);
   editor.commands.setContent(note.content || "");
   setTimeout(() => { suppressDirty = false; }, 0);
 
@@ -414,7 +473,7 @@ async function loadNotes() {
   notesCache = res.ok ? await res.json() : [];
   currentNoteId = null;
   suppressDirty = true;
-  titleInput.value = "";
+  setTitle("");
   editor.commands.setContent("");
   setTimeout(() => { suppressDirty = false; }, 0);
   statusEl.textContent = "";
@@ -425,7 +484,9 @@ async function loadNotes() {
 // the server already worked out which view the path means
 // a Notes path naming a tag lands on that tag's page
 const tagged = VIEW.tag || VIEW.uncategorised;
-setView(VIEW.type === "notes" && tagged ? "tag" : ["links", "notes", "ct"].includes(VIEW.type) ? VIEW.type : "links");
+// Pictures and Projects pages are drawn into the same pane as a tag's page
+const ownPane = ["pictures", "projects"].includes(VIEW.type);
+setView(ownPane || (VIEW.type === "notes" && tagged) ? "tag" : ["links", "notes", "ct"].includes(VIEW.type) ? VIEW.type : "links");
 
 (async () => {
   await loadTags();

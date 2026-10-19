@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=139">
+  <link rel="stylesheet" href="/static/style.css?v=143">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <meta name="tether-uuid" content="{{ tether_uuid | default('') }}">
   <script>
@@ -19,7 +19,8 @@
 <body>
 
   <div class="app-shell">
-  {% set mode = 'notes' if view and view.type in ('notes', 'editor') else ('links' if view else '') %}
+  {% set sides = {'notes': 'notes', 'editor': 'notes', 'pictures': 'pictures', 'projects': 'projects'} %}
+  {% set mode = (sides.get(view.type, 'links')) if view else '' %}
   <nav class="rail" aria-label="Category">
     {% if view %}
     <div class="add-link-wrap">
@@ -83,6 +84,12 @@
     <a href="/note" class="rail-btn {% if mode == 'notes' %}active{% endif %}" data-mode="notes" title="Notes">
       <i data-lucide="file-text"></i>
     </a>
+    <a href="/picture" class="rail-btn {% if mode == 'pictures' %}active{% endif %}" data-mode="pictures" title="Pictures">
+      <i data-lucide="image"></i>
+    </a>
+    <a href="/project" class="rail-btn {% if mode == 'projects' %}active{% endif %}" data-mode="projects" title="Projects">
+      <i data-lucide="folder-kanban"></i>
+    </a>
     <div class="rail-bottom">
       <a href="/settings" class="rail-btn {% if request.url.path == '/settings' %}active{% endif %}" title="Settings" onclick="{% if request.url.path == '/settings' %}settingsGoBack(event){% endif %}">
         <i data-lucide="settings"></i>
@@ -94,18 +101,31 @@
   <nav class="sidebar">
 
     {% block sidebar_nav %}
-    {% set mode = 'notes' if view and view.type in ('notes', 'editor') else 'links' %}
+    {# blocks can't see the set above, so it's repeated #}
+    {% set sides = {'notes': 'notes', 'editor': 'notes', 'pictures': 'pictures', 'projects': 'projects'} %}
+    {% set mode = sides.get(view.type, 'links') if view else 'links' %}
     <div class="sidebar-head">
-      <span class="sidebar-head-title">{{ 'Notes' if mode == 'notes' else 'Links' }}</span>
+      <span class="sidebar-head-title">{{ mode | capitalize }}</span>
       <div class="row-menu-wrap">
         <button type="button" class="row-overflow sidebar-head-add" title="Add" onclick="toggleRowMenu(this)">
           <i data-lucide="plus"></i>
         </button>
         <div class="row-menu">
+          {% if mode == 'projects' %}
+          <button type="button" class="row-menu-item" onclick="closeRowMenus(); openProjectModal()">
+            <i data-lucide="folder-plus"></i> New project
+          </button>
+          {% else %}
           <button type="button" class="row-menu-item" onclick="closeRowMenus(); openNewTagModal()">
             <i data-lucide="folder-plus"></i> New tag
           </button>
-          {% if mode == 'notes' %}
+          {% endif %}
+          {% if mode == 'projects' %}
+          {% elif mode == 'pictures' %}
+          <button type="button" class="row-menu-item" onclick="closeRowMenus(); pickPictures()">
+            <i data-lucide="image-plus"></i> Upload pictures
+          </button>
+          {% elif mode == 'notes' %}
           <button type="button" class="row-menu-item" onclick="closeRowMenus(); window.createNoteInCategory?.()">
             <i data-lucide="file-plus"></i> New note
           </button>
@@ -241,7 +261,7 @@
     </button>
   </div>
 
-  <script src="/static/app.js?v=124"></script>
+  <script src="/static/app.js?v=127"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

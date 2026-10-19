@@ -564,38 +564,60 @@ h1 { font-size: 26px; font-weight: 500; letter-spacing: -0.01em; }
 }
 
 .notes-save-status {
-  display: block;
-  height: 14px;
   font-size: 11.5px;
   color: var(--subtext);
+  justify-self: end;
 }
 
+/* full column width, so the head's border can span it like on a tag's page */
 .notes-editor-scroll {
   flex: 1;
   overflow-y: auto;
-  padding: 1rem 1rem 4rem;
-  max-width: calc(var(--content-w) + 2rem);
   width: 100%;
+  container-type: inline-size;
 }
+.note-pane {
+  max-width: var(--content-w);
+  padding: 24px 1rem 4rem;    /* matches .ct-pane */
+}
+/* the row is the height of the Filter button on a tag's page, so the two heads match */
+.note-head { grid-template-columns: minmax(0, 1fr) auto; grid-template-rows: 29px; }
 
+/* an input can't size to its text, so a hidden copy of the title sets the width */
+.note-title-grow {
+  display: inline-grid;
+  min-width: 0;
+  max-width: 100%;
+}
+.note-title-grow::after {
+  content: attr(data-value) " ";
+  visibility: hidden;
+  white-space: pre;
+  overflow: hidden;
+}
+.note-title-grow::after,
 .note-title-input {
-  display: block;
+  grid-area: 1 / 1;
+  font-size: 16px;           /* the same as .ct-head h1 */
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.note-title-input {
   width: 100%;
+  min-width: 0;
+  padding: 0;
   background: none;
   border: none;
   outline: none;
-  font-size: 26px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
   color: var(--text);
-  margin-bottom: 1rem;
+  text-overflow: ellipsis;
 }
 .note-title-input::placeholder { color: var(--subtext); }
 
 .note-created {
   font-size: 11.5px;
   color: var(--subtext);
-  margin: -0.5rem 0 1rem;
+  margin: 1rem 0;
 }
 
 .note-editor { font-size: 14.5px; line-height: 1.7; color: var(--text); }
@@ -1872,3 +1894,52 @@ code {
   align-items: center;
 }
 .refresh-toast-close:hover { color: var(--text); }
+
+/* ── Pictures ────────────────────────────────────────────── */
+.picture-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  padding: 4px 0 16px;
+}
+.picture-tile {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.picture-img { display: block; aspect-ratio: 4 / 3; background: var(--n-900); }
+.picture-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.picture-foot {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 4px 4px 10px;
+}
+.picture-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--n-300);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.picture-pick {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: var(--radius-sm);
+}
+
+/* ── Projects ────────────────────────────────────────────── */
+.project-section {
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--n-400);
+  margin: 18px 0 6px;
+}

@@ -9,13 +9,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 import httpx
 from bs4 import BeautifulSoup
-from fastapi import APIRouter, Header, HTTPException, BackgroundTasks, Request, UploadFile, File
-from fastapi.responses import JSONResponse, Response
+from fastapi import APIRouter, Header, HTTPException, BackgroundTasks, Request, UploadFile, File, Form
+from fastapi.responses import JSONResponse, Response, FileResponse
 from pydantic import BaseModel, field_validator
 from typing import Any
 
-from db import db, get_setting, set_setting, NOTES_DIR
-from slugs import slugify, tag_paths, note_slugs
+from db import db, get_setting, set_setting, NOTES_DIR, PICTURES_DIR
+from slugs import slugify, slug_map, tag_paths, note_slugs
 
 router = APIRouter(prefix="/api")
 
@@ -205,7 +205,7 @@ async def _run_bulk_refresh():
 # ── Tags ──────────────────────────────────────────────────────────────────────
 
 NEW_TAG_SENTINEL = "+ New"
-TAG_KINDS = ("links", "notes")
+TAG_KINDS = ("links", "notes", "pictures")
 
 
 def _tag_by_name(conn, name: str, kind: str, color: str | None = None) -> int:
@@ -264,7 +264,7 @@ class TagCreate(BaseModel):
 def create_tag(body: TagCreate, x_tether_uuid: str | None = Header(default=None)):
     _check_auth(x_tether_uuid)
     if body.kind not in TAG_KINDS:
-        raise HTTPException(status_code=400, detail="kind must be links or notes")
+        raise HTTPException(status_code=400, detail="kind must be links, notes or pictures")
     with db() as conn:
         tag_id = _tag_by_name(conn, body.name, body.kind, body.color)
         row = conn.execute("SELECT id, name, color, position, kind FROM tags WHERE id=?",
@@ -346,6 +346,7 @@ def reassign_tag(tag_id: int, body: TagReassign, x_tether_uuid: str | None = Hea
             for link_id in link_ids:
                 _link_tag_write(conn, link_id, body.to_tag_id)
             conn.execute("UPDATE notes SET tag_id=? WHERE tag_id=?", (body.to_tag_id, tag_id))
+            conn.execute("UPDATE pictures SET tag_id=? WHERE tag_id=?", (body.to_tag_id, tag_id))
         # deleting the tag cascades: link_tags rows for it are removed (CASCADE),
         # and any notes still pointing at it are uncategorised (SET NULL)
         conn.execute("DELETE FROM tags WHERE id=?", (tag_id,))
@@ -358,6 +359,8 @@ def purge_tag(tag_id: int, x_tether_uuid: str | None = Header(default=None)):
     with db() as conn:
         note_ids = [r["id"] for r in conn.execute("SELECT id FROM notes WHERE tag_id=?", (tag_id,)).fetchall()]
         link_ids = [r["link_id"] for r in conn.execute("SELECT link_id FROM link_tags WHERE tag_id=?", (tag_id,)).fetchall()]
+        pic_files = [r["filename"] for r in conn.execute("SELECT filename FROM pictures WHERE tag_id=?", (tag_id,)).fetchall()]
+        conn.execute("DELETE FROM pictures WHERE tag_id=?", (tag_id,))
         for note_id in note_ids:
             conn.execute("DELETE FROM notes WHERE id=?", (note_id,))
         for link_id in link_ids:
@@ -367,6 +370,8 @@ def purge_tag(tag_id: int, x_tether_uuid: str | None = Header(default=None)):
         path = NOTES_DIR / f"{note_id}.md"
         if path.exists():
             path.unlink()
+    for filename in pic_files:
+        (PICTURES_DIR / filename).unlink(missing_ok=True)
 
 
 # ── Links ─────────────────────────────────────────────────────────────────────
@@ -568,7 +573,7 @@ def search_all(q: str, x_tether_uuid: str | None = Header(default=None)):
     _check_auth(x_tether_uuid)
     needle = q.strip()
     if not needle:
-        return {"links": [], "notes": []}
+        return {"links": [], "notes": [], "pictures": [], "projects": []}
     like = "%" + needle.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
     with db() as conn:
         links = [dict(r) for r in conn.execute(
@@ -592,7 +597,11 @@ def search_all(q: str, x_tether_uuid: str | None = Header(default=None)):
                           "path": f"/note/{tag}/{n['slug']}"})
             if len(notes) == 20:
                 break
-    return {"links": links, "notes": notes}
+        pictures = [dict(r) for r in conn.execute(
+            "SELECT p.id, p.title, t.name AS tag_name FROM pictures p LEFT JOIN tags t ON t.id=p.tag_id "
+            "WHERE p.title LIKE ?1 ESCAPE '\\' ORDER BY p.created_at DESC LIMIT 20", (like,)).fetchall()]
+        projects = [p for p in _project_list(conn) if needle.lower() in p["name"].lower()][:20]
+    return {"links": links, "notes": notes, "pictures": pictures, "projects": projects}
 
 
 _CLEANUP_UNITS = {"days", "weeks", "months", "years"}
@@ -964,6 +973,249 @@ def list_content_type_items(ct_id: int, x_tether_uuid: str | None = Header(defau
             ).fetchall()
             out["notes"] = _note_dicts(conn, rows)
         return out
+
+
+# ── Pictures ──────────────────────────────────────────────────────────────────
+
+MAX_PICTURE_BYTES = 25 * 1024 * 1024
+
+
+def _sniff_image(data: bytes) -> tuple[str, str] | None:
+    """(mime, ext) from the file's own bytes. The declared type can't be trusted
+    (Shortcuts often sends octet-stream), and serving whatever it claims from our
+    own origin would let an SVG or HTML upload run script."""
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg", ".jpg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png", ".png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "image/gif", ".gif"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp", ".webp"
+    if data[4:8] == b"ftyp":
+        brand = data[8:12]
+        if brand in (b"avif", b"avis"):
+            return "image/avif", ".avif"
+        if brand in (b"heic", b"heix", b"heim", b"heis", b"mif1", b"msf1"):
+            return "image/heic", ".heic"   # only Safari shows these; the Shortcut converts to JPEG first
+    return None
+
+
+_PICTURE_SELECT = """
+    SELECT p.id, p.title, p.original_name, p.mime, p.size, p.tag_id, p.created_at,
+           t.name AS tag_name, t.color AS tag_color
+    FROM pictures p
+    LEFT JOIN tags t ON t.id = p.tag_id
+"""
+
+
+def _picture_dict(row) -> dict:
+    d = dict(row)
+    tag_name, tag_color = d.pop("tag_name"), d.pop("tag_color")
+    d["tag"] = {"id": d["tag_id"], "name": tag_name, "color": tag_color} if d["tag_id"] else None
+    d["title"] = d["title"] or d["original_name"] or "Picture"
+    d["src"] = f"/api/pictures/{d['id']}/file"
+    return d
+
+
+@router.get("/pictures")
+def list_pictures(tag: int | None = None, uncategorised: bool | None = None,
+                  x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    clauses, params = [], []
+    if tag is not None:
+        clauses.append("p.tag_id=?")
+        params.append(tag)
+    if uncategorised:
+        clauses.append("p.tag_id IS NULL")
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    with db() as conn:
+        rows = conn.execute(f"{_PICTURE_SELECT} {where} ORDER BY p.created_at DESC", params).fetchall()
+    return [_picture_dict(r) for r in rows]
+
+
+@router.post("/pictures", status_code=201)
+async def upload_picture(
+    file: UploadFile = File(...),
+    tag_id: int | None = Form(default=None),
+    tag: str | None = Form(default=None),        # a tag name, for the Shortcut; made if new
+    title: str | None = Form(default=None),
+    x_tether_uuid: str | None = Header(default=None),
+):
+    _check_auth(x_tether_uuid)
+    data = await file.read(MAX_PICTURE_BYTES + 1)
+    if len(data) > MAX_PICTURE_BYTES:
+        raise HTTPException(status_code=413, detail="Picture is over 25 MB")
+    kind = _sniff_image(data)
+    if not kind:
+        raise HTTPException(status_code=415, detail="That file isn't a JPEG, PNG, GIF, WebP, AVIF or HEIC picture")
+    mime, ext = kind
+
+    pic_id = str(uuid.uuid4())
+    filename = f"{pic_id}{ext}"
+    (PICTURES_DIR / filename).write_bytes(data)
+    name = (title or "").strip() or Path(file.filename or "").stem or None
+    with db() as conn:
+        if tag and tag.strip() and not tag_id:
+            tag_id = _tag_by_name(conn, tag, "pictures")
+        conn.execute(
+            "INSERT INTO pictures(id, filename, original_name, mime, size, title, tag_id) VALUES (?,?,?,?,?,?,?)",
+            (pic_id, filename, file.filename, mime, len(data), name, tag_id or None),
+        )
+        row = conn.execute(f"{_PICTURE_SELECT} WHERE p.id=?", (pic_id,)).fetchone()
+    return _picture_dict(row)
+
+
+# ponytail: no auth here, since an <img> can't send the header; ids are random UUIDs.
+# Put the files behind a cookie if Tether is ever exposed beyond the LAN.
+@router.get("/pictures/{picture_id}/file")
+def get_picture_file(picture_id: str):
+    with db() as conn:
+        row = conn.execute("SELECT filename, mime FROM pictures WHERE id=?", (picture_id,)).fetchone()
+    path = PICTURES_DIR / row["filename"] if row else None
+    if not path or not path.exists():
+        raise HTTPException(status_code=404)
+    return FileResponse(path, media_type=row["mime"], headers={"X-Content-Type-Options": "nosniff"})
+
+
+class PictureUpdate(BaseModel):
+    title: str | None = None
+    tag_id: int | None = None   # 0 clears the tag; omit/None leaves it unchanged
+
+
+@router.patch("/pictures/{picture_id}")
+def update_picture(picture_id: str, body: PictureUpdate, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    with db() as conn:
+        if body.title is not None:
+            conn.execute("UPDATE pictures SET title=? WHERE id=?", (body.title.strip() or None, picture_id))
+        if body.tag_id is not None:
+            conn.execute("UPDATE pictures SET tag_id=? WHERE id=?", (body.tag_id or None, picture_id))
+        row = conn.execute(f"{_PICTURE_SELECT} WHERE p.id=?", (picture_id,)).fetchone()
+    if not row:
+        raise HTTPException(status_code=404)
+    return _picture_dict(row)
+
+
+@router.delete("/pictures/{picture_id}", status_code=204)
+def delete_picture(picture_id: str, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    with db() as conn:
+        row = conn.execute("SELECT filename FROM pictures WHERE id=?", (picture_id,)).fetchone()
+        conn.execute("DELETE FROM pictures WHERE id=?", (picture_id,))
+    if row:
+        (PICTURES_DIR / row["filename"]).unlink(missing_ok=True)
+
+
+# ── Projects ──────────────────────────────────────────────────────────────────
+# A project only collects things saved elsewhere: taking an item out of a
+# project, or deleting the project, never deletes the item itself.
+
+ITEM_TABLES = {"link": "links", "note": "notes", "picture": "pictures"}
+
+
+def _project_list(conn) -> list:
+    rows = conn.execute(
+        "SELECT p.id, p.name, (SELECT COUNT(*) FROM project_items i WHERE i.project_id=p.id) AS count "
+        "FROM projects p ORDER BY p.id").fetchall()
+    slugs = slug_map(rows, "name")
+    out = [dict(r) | {"slug": slugs[r["id"]]} for r in rows]
+    return sorted(out, key=lambda p: p["name"].lower())
+
+
+def _project(conn, project_id: int) -> dict:
+    found = next((p for p in _project_list(conn) if p["id"] == project_id), None)
+    if not found:
+        raise HTTPException(status_code=404)
+    return found
+
+
+@router.get("/projects")
+def list_projects(x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    with db() as conn:
+        return _project_list(conn)
+
+
+class ProjectBody(BaseModel):
+    name: str
+
+
+@router.post("/projects", status_code=201)
+def create_project(body: ProjectBody, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    if not body.name.strip():
+        raise HTTPException(status_code=422, detail="name is required")
+    with db() as conn:
+        pid = conn.execute("INSERT INTO projects(name) VALUES (?)", (body.name.strip(),)).lastrowid
+        return _project(conn, pid)
+
+
+@router.patch("/projects/{project_id}")
+def rename_project(project_id: int, body: ProjectBody, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    if not body.name.strip():
+        raise HTTPException(status_code=422, detail="name is required")
+    with db() as conn:
+        conn.execute("UPDATE projects SET name=? WHERE id=?", (body.name.strip(), project_id))
+        return _project(conn, project_id)
+
+
+@router.delete("/projects/{project_id}", status_code=204)
+def delete_project(project_id: int, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    with db() as conn:
+        conn.execute("DELETE FROM projects WHERE id=?", (project_id,))
+
+
+@router.get("/projects/{project_id}")
+def get_project(project_id: int, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    member = ("JOIN project_items i ON i.item_id={col} AND i.item_kind='{kind}' "
+              "WHERE i.project_id=? ORDER BY i.added_at DESC")
+    with db() as conn:
+        project = _project(conn, project_id)
+        links = conn.execute("SELECT l.* FROM links l " + member.format(col="l.id", kind="link"),
+                             (project_id,)).fetchall()
+        notes = _note_dicts(conn, conn.execute(f"{_NOTE_SELECT} " + member.format(col="n.id", kind="note"),
+                                               (project_id,)).fetchall())
+        paths = tag_paths(conn, "notes")
+        for n in notes:
+            n["path"] = f"/note/{paths.get(n['tag_id']) or 'untagged'}/{n['slug']}"
+        pictures = conn.execute(f"{_PICTURE_SELECT} " + member.format(col="p.id", kind="picture"),
+                                (project_id,)).fetchall()
+        project["links"] = _link_rows(conn, links)
+        project["notes"] = notes
+        project["pictures"] = [_picture_dict(r) for r in pictures]
+    return project
+
+
+class ProjectItem(BaseModel):
+    item_kind: str          # link | note | picture
+    item_id: str
+
+
+@router.post("/projects/{project_id}/items", status_code=204)
+def add_to_project(project_id: int, body: ProjectItem, x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    table = ITEM_TABLES.get(body.item_kind)
+    if not table:
+        raise HTTPException(status_code=400, detail="item_kind must be link, note or picture")
+    with db() as conn:
+        _project(conn, project_id)
+        if not conn.execute(f"SELECT 1 FROM {table} WHERE id=?", (body.item_id,)).fetchone():
+            raise HTTPException(status_code=404, detail=f"No such {body.item_kind}")
+        conn.execute("INSERT OR IGNORE INTO project_items(project_id, item_kind, item_id) VALUES (?,?,?)",
+                     (project_id, body.item_kind, body.item_id))
+
+
+@router.delete("/projects/{project_id}/items", status_code=204)
+def remove_from_project(project_id: int, item_kind: str, item_id: str,
+                        x_tether_uuid: str | None = Header(default=None)):
+    _check_auth(x_tether_uuid)
+    with db() as conn:
+        conn.execute("DELETE FROM project_items WHERE project_id=? AND item_kind=? AND item_id=?",
+                     (project_id, item_kind, item_id))
 
 
 @router.post("/settings/uuid", status_code=200)

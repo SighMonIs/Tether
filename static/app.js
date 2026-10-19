@@ -185,6 +185,9 @@ function linkCardHtml(link, selectable = false) {
           <i data-lucide="ellipsis-vertical"></i>
         </button>
         <div class="row-menu">
+          <button type="button" class="row-menu-item" onclick="openAddToProject('link', ['${link.id}'])">
+            <i data-lucide="folder-kanban"></i> Add to project
+          </button>
           <button type="button" class="row-menu-item" onclick="openNoteForLink('${link.id}', ${link.note_id ? `'${link.note_id}'` : "null"})">
             <i data-lucide="file-text"></i> ${link.note_id ? "Open note" : "Add note"}
           </button>
@@ -203,7 +206,7 @@ window.linkCardHtml = linkCardHtml;
 window.bindLinkRowMenus = bindLinkRowMenus;
 
 function bindLinkRowMenus(root) {
-  root.querySelectorAll(".link-row .row-overflow").forEach(btn => {
+  root.querySelectorAll(":is(.link-row, .picture-tile) .row-overflow").forEach(btn => {
     btn.addEventListener("click", () => toggleRowMenu(btn));
   });
   root.querySelectorAll("[data-note-for]").forEach(btn => {
@@ -212,7 +215,7 @@ function bindLinkRowMenus(root) {
       openNoteForLink(btn.dataset.noteFor, btn.dataset.noteId);
     });
   });
-  root.querySelectorAll(".link-row .row-menu-item").forEach(btn => {
+  root.querySelectorAll(":is(.link-row, .picture-tile) .row-menu-item").forEach(btn => {
     btn.addEventListener("click", () => closeRowMenus());
   });
 }
@@ -297,7 +300,7 @@ function initSearch() {
     const mine = ++seq;
     const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`, { headers: headers() });
     if (mine !== seq) return;                     // a newer keystroke won
-    const { links, notes } = res.ok ? await res.json() : { links: [], notes: [] };
+    const { links = [], notes = [], pictures = [], projects = [] } = res.ok ? await res.json() : {};
     panel.innerHTML = (section("Links", links.map(l => `
         <a class="search-row" href="${escHtml(l.url)}" target="_blank" rel="noopener">
           <i data-lucide="link"></i>
@@ -309,6 +312,18 @@ function initSearch() {
           <i data-lucide="file-text"></i>
           <span class="search-title">${escHtml(n.title || "Untitled")}</span>
           <span class="search-meta">${escHtml(n.tag_name || "Untagged")}</span>
+        </a>`)) +
+      section("Pictures", pictures.map(p => `
+        <a class="search-row" href="/api/pictures/${p.id}/file" target="_blank" rel="noopener">
+          <i data-lucide="image"></i>
+          <span class="search-title">${escHtml(p.title || "Picture")}</span>
+          <span class="search-meta">${escHtml(p.tag_name || "Untagged")}</span>
+        </a>`)) +
+      section("Projects", projects.map(p => `
+        <a class="search-row" href="/project/${escHtml(p.slug)}">
+          <i data-lucide="folder-kanban"></i>
+          <span class="search-title">${escHtml(p.name)}</span>
+          <span class="search-meta">${plural(p.count, "item")}</span>
         </a>`)))
       || `<div class="search-empty">Nothing matches "${escHtml(q)}"</div>`;
     panel.classList.add("open");
@@ -1010,6 +1025,8 @@ function initAddPanel() {
   if (!btn || !panel) return;
   btn.addEventListener("click", ev => {
     ev.stopPropagation();
+    if (MODE === "pictures") return pickPictures();
+    if (MODE === "projects") return openProjectModal();
     panel.classList.contains("open") ? closeAddPanel() : openAddPanel();
   });
   panel.addEventListener("click", ev => ev.stopPropagation());
@@ -1033,13 +1050,14 @@ let _sidebarTags = [];
 let _uncatCount = 0;
 let _sidebarNotes = [];                 // Notes tab only: every note, grouped under its tag
 let _openNoteId = VIEW.note || null;
-const MODE = ["notes", "editor"].includes(VIEW.type) ? "notes" : "links";
+// Links, Notes and Pictures each have their own tags; Projects lists projects instead
+const MODE = { notes: "notes", editor: "notes", pictures: "pictures", projects: "projects" }[VIEW.type] || "links";
 
 /* ── Readable paths ──────────────────────────────────────── */
 // The server resolves the path into ids before the page loads; from then on the
 // front end builds the same paths back out of the slugs the API returns.
 
-const MODE_ROOT = MODE === "notes" ? "/note" : "/link";
+const MODE_ROOT = { links: "/link", notes: "/note", pictures: "/picture", projects: "/project" }[MODE];
 
 function tagPath(tagId) {
   if (tagId === "") return "untagged";
@@ -1066,6 +1084,7 @@ function currentTagId() {
 function renderSidebar() {
   const ul = document.getElementById("sidebar-cats");
   if (!ul) return;
+  if (MODE === "projects") return renderProjectSidebar(ul);
 
   const activeTag = VIEW.tag ? String(VIEW.tag) : null;
   // chevron is a parent's toggle, at the row's right end; other rows get a spacer so the ⋮ lines up
@@ -1118,7 +1137,7 @@ function renderSidebar() {
   };
 
   // ponytail: the badge counts untagged links only, so in Notes the row always shows
-  const showUncat = MODE === "notes" || _uncatCount > 0;
+  const showUncat = MODE !== "links" || _uncatCount > 0;
   const withNotes = (key, html) => html + (isOpen(key) ? notesOf(key) : "");
   ul.innerHTML =
     (showUncat
@@ -1150,8 +1169,8 @@ function renderSidebar() {
         f.has(key) ? f.delete(key) : f.add(key);
         saveFoldState(f);
       }
-      if (MODE === "notes") showNotesTag(id, a.getAttribute("href"));
-      else showLinksTag(id, a.getAttribute("href"));
+      if (MODE === "links") showLinksTag(id, a.getAttribute("href"));
+      else showNotesTag(id, a.getAttribute("href"));
     });
   });
   bindNoteLinks(ul);
@@ -1213,6 +1232,8 @@ function bindNoteLinks(root) {
   });
 }
 
+window.showNotesTag = showNotesTag;
+window.categoryPath = categoryPath;
 function showNotesTag(tagId, href) {
   // already on this tag's page: only the fold changed
   if (currentTagId() === tagId && !_openNoteId) { renderSidebar(); return; }
@@ -1304,7 +1325,8 @@ window.setSidebarNote = (noteId, slug) => {
     renderSidebar();
   }
   const tag = currentTagId();
-  if (!noteId || !slug || tag === null) return;
+  // before the tags load there's no path to build; the server's path still stands
+  if (!noteId || !slug || tag === null || !tagPath(tag)) return;
   const path = categoryPath(tag, `/${slug}`);
   if (location.pathname !== path) history.pushState({}, "", path);
 };
@@ -1330,6 +1352,11 @@ let _sidebarLoaded = false;
 async function loadSidebarCats() {
   const ul = document.getElementById("sidebar-cats");
   if (!ul) return;
+  if (MODE === "projects") {
+    const res = await fetch("/api/projects", { headers: headers() });
+    _projects = res.ok ? await res.json() : [];
+    return renderSidebar();
+  }
   try {
     const [tagsRes, uncatRes] = await Promise.all([
       fetch(`/api/tags?kind=${MODE}`, { headers: headers() }),
@@ -1376,6 +1403,14 @@ function noteCardHtml(n) {
       <span class="link-meta">
         <span class="link-date">${friendlyDate(n.created_at)}</span>
       </span>
+      <div class="row-menu-wrap">
+        <button class="row-overflow" type="button" title="More"><i data-lucide="ellipsis-vertical"></i></button>
+        <div class="row-menu">
+          <button type="button" class="row-menu-item" onclick="openAddToProject('note', ['${n.id}'])">
+            <i data-lucide="folder-kanban"></i> Add to project
+          </button>
+        </div>
+      </div>
     </article>`;
 }
 
@@ -1467,6 +1502,9 @@ function ctActionsMenu() {
         ${ctKind() === "links" ? `<button type="button" class="row-menu-item" data-bulk="export">
           <i data-lucide="download"></i> Export selected
         </button>` : ""}
+        <button type="button" class="row-menu-item" data-bulk="project">
+          <i data-lucide="folder-kanban"></i> Add to project
+        </button>
         <button type="button" class="row-menu-item" data-bulk="category">
           <i data-lucide="tag"></i> Change tag
         </button>
@@ -1537,11 +1575,14 @@ function selectedItems() {
 }
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
+const itemWord = () => ({ links: "link", notes: "note", pictures: "picture" })[ctKind()];
 
 async function runBulkAction(action, ctId) {
   const links = selectedItems();
   if (!links.length) return;
-  const word = ctKind() === "notes" ? "note" : "link";
+  const word = itemWord();
+
+  if (action === "project") return openAddToProject(word, links.map(l => l.id));
 
   if (action === "export") {
     // same shape as /api/export, built from what is already in hand
@@ -1593,17 +1634,17 @@ async function submitBulkCategory(ev) {
   const id = document.getElementById("bulk-category-select").value;
   const cat = _sidebarTags.find(t => String(t.id) === String(id));
   const items = selectedItems();
-  const notes = ctKind() === "notes";
+  const byId = ctKind() !== "links";
   for (const l of items) {
-    // a note takes the tag's id (0 = none), a link the tag's name
-    await fetch(`/api/${notes ? "notes" : "links"}/${l.id}`, {
+    // a note or picture takes the tag's id (0 = none), a link the tag's name
+    await fetch(`/api/${ctKind()}/${l.id}`, {
       method: "PATCH", headers: headers(),
-      body: JSON.stringify(notes ? { tag_id: cat ? cat.id : 0 } : { tags: cat ? [cat.name] : [] }),
+      body: JSON.stringify(byId ? { tag_id: cat ? cat.id : 0 } : { tags: cat ? [cat.name] : [] }),
     });
   }
   document.getElementById("bulk-category-modal").close();
   _selected.clear();
-  toast(`Moved ${plural(items.length, notes ? "note" : "link")}`);
+  toast(`Moved ${plural(items.length, itemWord())}`);
   await loadSidebarCats();
   _ctReload();
 }
@@ -1683,13 +1724,18 @@ function renderCtPane(ctId) {
       </div>
       <div class="ct-head-mid">${ctActionsMenu()}</div>
       <div class="ct-head-right">
+        ${kind === "pictures" ? `<button type="button" class="btn-ghost" id="ct-upload"><i data-lucide="image-plus"></i> Upload</button>` : ""}
         ${ctSelectControls()}
         ${ctFilterPanel()}
       </div>
     </div>`;
 
-  let body = items.map(l => kind === "links" ? linkCardHtml(l, true) : noteCardHtml(l)).join("")
-    || `<div class="empty-state">${n ? `No ${kind} match that filter.` : `No ${kind} in here yet.`}</div>`;
+  let body = kind === "pictures"
+    ? (items.length ? `<div class="picture-grid">${items.map(pictureCardHtml).join("")}</div>` : "")
+    : items.map(l => kind === "links" ? linkCardHtml(l, true) : noteCardHtml(l)).join("");
+  body = body || `<div class="empty-state">${n ? `No ${kind} match that filter.`
+    : kind === "pictures" ? "No pictures in here yet. Upload some, paste a screenshot, or drop files here."
+    : `No ${kind} in here yet.`}</div>`;
   if (n) body = `<div class="filter-summary">Showing ${items.length} of ${ctItems().length}</div>` + body;
 
   pane.innerHTML = head + body;
@@ -1698,6 +1744,7 @@ function renderCtPane(ctId) {
   bindCtFilter(pane, ctId);
   bindCtSelect(pane, ctId);
   pane.querySelector("#ct-edit-tag")?.addEventListener("click", () => openEditTag(tag.id, tag.name, tag.color));
+  pane.querySelector("#ct-upload")?.addEventListener("click", pickPictures);
   lucide.createIcons();
 }
 
@@ -1717,28 +1764,32 @@ async function renderContentTypeView(ctId) {
 
 window.renderContentTypeView = renderContentTypeView;
 
-// a Notes tag's page: the same pane, listing the notes in the tag on screen
-async function renderNotesTag() {
+// a Notes or Pictures tag's page: the same pane, listing what's in the tag on screen.
+// Pictures with no tag picked shows every picture, like Links does.
+async function renderTagPage() {
+  if (MODE === "projects") return renderProjectPage();
   const pane = document.getElementById("ct-pane");
   const tag = currentTagId();
-  if (!pane || tag === null) return;
+  if (!pane || (tag === null && MODE !== "pictures")) return;
   pane.innerHTML = '<div class="loading-state">Loading…</div>';
-  const qs = tag === "" ? "uncategorised=true" : `tag=${tag}`;
-  const res = await fetch(`/api/notes?${qs}`, { headers: headers() });
+  const qs = tag === null ? "" : tag === "" ? "uncategorised=true" : `tag=${tag}`;
+  const res = await fetch(`/api/${MODE}?${qs}`, { headers: headers() });
   if (currentTagId() !== tag) return;            // moved on while this loaded
+  if (tag === null) setPageTitle("Pictures");
   _ctData = {
-    content_type: { id: null, kind: "notes", tag_id: tag === "" ? null : Number(tag), title: "Untagged" },
-    links: [],
-    notes: res.ok ? await res.json() : [],
+    content_type: { id: null, kind: MODE, tag_id: tag ? Number(tag) : null,
+                    title: tag === null ? "All pictures" : "Untagged" },
+    links: [], notes: [], pictures: [],
+    [MODE]: res.ok ? await res.json() : [],
   };
-  _ctReload = renderNotesTag;
+  _ctReload = renderTagPage;
   _ctFilter = { sites: [], from: "", to: "" };
   _selectMode = false;
   _selected.clear();
   renderCtPane(null);
 }
 
-window.renderNotesTag = renderNotesTag;
+window.renderTagPage = renderTagPage;
 
 function setPageTitle(title) {
   document.title = `${title} — Tether`;
@@ -1759,7 +1810,14 @@ function initSettingsTabs() {
 /* ── Init ────────────────────────────────────────────────── */
 document.addEventListener("DOMContentLoaded", () => {
   lucide.createIcons();
-  loadSidebarCats();
+  const sidebarReady = loadSidebarCats();
+  initPictureDrop();
+  // the Shortcut lands here after an upload, so the picture can be tagged
+  const editPic = MODE === "pictures" && new URLSearchParams(location.search).get("edit");
+  if (editPic) {
+    history.replaceState({}, "", location.pathname);
+    sidebarReady.then(() => openEditPicture(editPic));
+  }
   initSidebarResize();
   initAddPanel();
 
@@ -1792,3 +1850,274 @@ document.addEventListener("DOMContentLoaded", () => {
   loadErrorLog();
   initSettingsTabs();
 });
+
+/* ── Pictures ────────────────────────────────────────────── */
+function pictureCardHtml(p) {
+  return `
+    <article class="picture-tile" data-id="${p.id}">
+      ${_selectMode ? `<label class="link-pick picture-pick">
+          <input type="checkbox" class="link-check" value="${p.id}" ${_selected.has(p.id) ? "checked" : ""}>
+        </label>` : ""}
+      <a class="picture-img" href="${p.src}" target="_blank" rel="noopener">
+        <img src="${p.src}" alt="${escHtml(p.title)}" loading="lazy">
+      </a>
+      <div class="picture-foot">
+        <span class="picture-title" title="${escHtml(p.title)}">${escHtml(p.title)}</span>
+        <div class="row-menu-wrap">
+          <button class="row-overflow" type="button" title="More"><i data-lucide="ellipsis-vertical"></i></button>
+          <div class="row-menu">
+            <button type="button" class="row-menu-item" onclick="openAddToProject('picture', ['${p.id}'])">
+              <i data-lucide="folder-kanban"></i> Add to project
+            </button>
+            <button type="button" class="row-menu-item" onclick="openEditPicture('${p.id}')">
+              <i data-lucide="square-pen"></i> Edit
+            </button>
+            <button type="button" class="row-menu-item danger" onclick="deletePicture('${p.id}')">
+              <i data-lucide="trash-2"></i> Delete
+            </button>
+          </div>
+        </div>
+      </div>
+    </article>`;
+}
+
+function pickPictures() {
+  document.getElementById("picture-input")?.click();
+}
+
+// lands in the tag on screen; a pasted screenshot has no name worth keeping
+async function uploadPictures(files, pasted = false) {
+  const imgs = [...files].filter(f => f.type.startsWith("image/"));
+  if (!imgs.length) return;
+  const tag = currentTagId();
+  if (imgs.length > 1) toast(`Uploading ${plural(imgs.length, "picture")}…`);
+  let saved = 0;
+  for (const f of imgs) {
+    const form = new FormData();
+    form.append("file", f, f.name || "picture");
+    if (tag) form.append("tag_id", tag);
+    if (pasted) form.append("title", `Screenshot ${new Date().toLocaleString()}`);
+    const res = await fetch("/api/pictures", { method: "POST", headers: { "X-Tether-UUID": UUID_HEADER() }, body: form });
+    if (res.ok) saved++;
+    else toast((await res.json().catch(() => ({}))).detail || `Couldn't upload ${f.name}`, 4000);
+  }
+  if (saved) toast(`Saved ${plural(saved, "picture")}`);
+  await loadSidebarCats();
+  renderTagPage();
+}
+
+// file picker, paste and drag-and-drop all upload on the Pictures side
+function initPictureDrop() {
+  const input = document.getElementById("picture-input");
+  if (!input || MODE !== "pictures") return;
+  input.addEventListener("change", () => { uploadPictures(input.files); input.value = ""; });
+  document.addEventListener("paste", ev => {
+    if (ev.target.closest?.("input, textarea, [contenteditable]")) return;
+    if (!ev.clipboardData?.files.length) return;
+    ev.preventDefault();
+    uploadPictures(ev.clipboardData.files, true);
+  });
+  document.addEventListener("dragover", ev => {
+    if (ev.dataTransfer?.types.includes("Files")) ev.preventDefault();
+  });
+  document.addEventListener("drop", ev => {
+    if (!ev.dataTransfer?.files.length) return;
+    ev.preventDefault();
+    uploadPictures(ev.dataTransfer.files);
+  });
+}
+
+async function openEditPicture(id) {
+  let p = ctItems().find(x => x.id === id);
+  if (!p) {
+    const res = await fetch("/api/pictures", { headers: headers() });
+    p = (res.ok ? await res.json() : []).find(x => x.id === id);
+  }
+  if (!p) return;
+  document.getElementById("picture-edit-id").value = p.id;
+  document.getElementById("picture-edit-title").value = p.title || "";
+  fillCategorySelect(document.getElementById("picture-edit-tag"), p.tag_id, "Untagged");
+  document.getElementById("picture-edit-modal").showModal();
+  setTimeout(() => document.getElementById("picture-edit-title").select(), 50);
+}
+
+async function savePicture(ev) {
+  ev.preventDefault();
+  const id = document.getElementById("picture-edit-id").value;
+  const res = await fetch(`/api/pictures/${id}`, {
+    method: "PATCH", headers: headers(),
+    body: JSON.stringify({
+      title: document.getElementById("picture-edit-title").value,
+      tag_id: Number(document.getElementById("picture-edit-tag").value) || 0,
+    }),
+  });
+  if (!res.ok) { toast("Couldn't save that picture"); return; }
+  document.getElementById("picture-edit-modal").close();
+  toast("Picture updated");
+  renderTagPage();
+}
+
+async function deletePicture(id) {
+  if (!await showConfirm("Delete this picture? This can't be undone.")) return;
+  await fetch(`/api/pictures/${id}`, { method: "DELETE", headers: headers() });
+  document.getElementById("picture-edit-modal")?.close();
+  toast("Picture deleted");
+  await loadSidebarCats();
+  renderTagPage();
+}
+
+/* ── Projects ────────────────────────────────────────────── */
+// A project only collects links, notes and pictures saved elsewhere.
+let _projects = [];
+
+function renderProjectSidebar(ul) {
+  ul.innerHTML = _projects.map(p => `
+    <li>
+      <a href="/project/${escHtml(p.slug)}" class="sidebar-cat-link ${VIEW.project === p.id ? "active" : ""}">
+        ${folderSvg("var(--n-400)")}
+        <span class="sidebar-cat-name">${escHtml(p.name)}</span>
+        <span class="sidebar-cat-badge">${p.count}</span>
+      </a>
+    </li>`).join("") || `<li class="sidebar-note sidebar-empty">No projects yet</li>`;
+}
+
+async function renderProjectPage() {
+  const pane = document.getElementById("ct-pane");
+  if (!pane) return;
+  if (!VIEW.project) {
+    setPageTitle("Projects");
+    pane.innerHTML = `<div class="empty-state">Pick a project, or use + to start one.
+      Then add links, notes and pictures to it from their ⋮ menu.</div>`;
+    return;
+  }
+  const res = await fetch(`/api/projects/${VIEW.project}`, { headers: headers() });
+  if (!res.ok) { pane.innerHTML = '<div class="empty-state">Not found.</div>'; return; }
+  const p = await res.json();
+  _ctReload = renderProjectPage;
+  setPageTitle(p.name);
+
+  const remove = (kind, id) => `
+    <button type="button" class="row-overflow" data-remove="${kind}" data-id="${id}" title="Remove from project">
+      <i data-lucide="x"></i>
+    </button>`;
+  const section = (label, html) => html ? `<h2 class="project-section">${label}</h2>${html}` : "";
+  const links = p.links.map(l => `
+    <article class="link-row">
+      <span class="link-thumb">${l.favicon_url ? `<img src="${escHtml(l.favicon_url)}" alt="" onerror="this.style.display='none'">` : ""}</span>
+      <span class="link-main">
+        <a class="link-title" href="${escHtml(l.url)}" target="_blank" rel="noopener">${escHtml(l.title || getDomain(l.url))}</a>
+        <span class="link-url">${escHtml(getDomain(l.url))}</span>
+      </span>
+      ${remove("link", l.id)}
+    </article>`).join("");
+  const notes = p.notes.map(n => `
+    <article class="link-row">
+      <span class="link-thumb"><i data-lucide="file-text"></i></span>
+      <span class="link-main">
+        <a class="link-title" href="${escHtml(n.path)}">${escHtml(n.title || "Untitled")}</a>
+        <span class="link-url">${escHtml(n.tag?.name || "Untagged")} · edited ${friendlyDate(n.updated_at)}</span>
+      </span>
+      ${remove("note", n.id)}
+    </article>`).join("");
+  const pictures = p.pictures.length ? `<div class="picture-grid">${p.pictures.map(pic => `
+    <article class="picture-tile">
+      <a class="picture-img" href="${pic.src}" target="_blank" rel="noopener"><img src="${pic.src}" alt="${escHtml(pic.title)}" loading="lazy"></a>
+      <div class="picture-foot">
+        <span class="picture-title" title="${escHtml(pic.title)}">${escHtml(pic.title)}</span>
+        ${remove("picture", pic.id)}
+      </div>
+    </article>`).join("")}</div>` : "";
+  const body = section("Links", links) + section("Notes", notes) + section("Pictures", pictures);
+
+  pane.innerHTML = `
+    <div class="ct-head">
+      <div class="ct-title">
+        <h1>${escHtml(p.name)}</h1>
+        <button type="button" class="ct-edit" id="project-edit" title="Edit project"><i data-lucide="pencil"></i></button>
+      </div>
+    </div>
+    ${body || `<div class="empty-state">Nothing in this project yet. Use “Add to project” from any link, note or picture's ⋮ menu.</div>`}`;
+
+  pane.querySelector("#project-edit").addEventListener("click", () => openProjectModal(p));
+  pane.querySelectorAll("[data-remove]").forEach(btn => btn.addEventListener("click", async () => {
+    const qs = new URLSearchParams({ item_kind: btn.dataset.remove, item_id: btn.dataset.id });
+    await fetch(`/api/projects/${p.id}/items?${qs}`, { method: "DELETE", headers: headers() });
+    toast("Removed from project");
+    await loadSidebarCats();
+    renderProjectPage();
+  }));
+  lucide.createIcons();
+}
+
+function openProjectModal(project = null) {
+  document.getElementById("project-modal-title").textContent = project ? "Edit project" : "New project";
+  document.getElementById("project-id").value = project ? project.id : "";
+  document.getElementById("project-name").value = project ? project.name : "";
+  document.getElementById("project-delete").hidden = !project;
+  document.getElementById("project-modal").showModal();
+  setTimeout(() => document.getElementById("project-name").focus(), 50);
+}
+
+async function saveProject(ev) {
+  ev.preventDefault();
+  const id = document.getElementById("project-id").value;
+  const res = await fetch(id ? `/api/projects/${id}` : "/api/projects", {
+    method: id ? "PATCH" : "POST", headers: headers(),
+    body: JSON.stringify({ name: document.getElementById("project-name").value }),
+  });
+  if (!res.ok) { toast("Couldn't save that project"); return; }
+  location.href = `/project/${(await res.json()).slug}`;   // a rename changes the path
+}
+
+async function deleteProject() {
+  const id = document.getElementById("project-id").value;
+  if (!await showConfirm("Delete this project? The links, notes and pictures in it are kept.")) return;
+  await fetch(`/api/projects/${id}`, { method: "DELETE", headers: headers() });
+  location.href = "/project";
+}
+
+let _addToProject = null;   // { kind: "link" | "note" | "picture", ids: [...] }
+
+async function openAddToProject(kind, ids) {
+  _addToProject = { kind, ids };
+  const res = await fetch("/api/projects", { headers: headers() });
+  const projects = res.ok ? await res.json() : [];
+  const sel = document.getElementById("add-to-project-select");
+  sel.innerHTML = projects.map(p => `<option value="${p.id}">${escHtml(p.name)}</option>`).join("")
+    + `<option value="__new__">+ New project…</option>`;
+  document.getElementById("add-to-project-new").value = "";
+  document.getElementById("add-to-project-title").textContent =
+    ids.length > 1 ? `Add ${plural(ids.length, kind)} to project` : "Add to project";
+  toggleNewProjectName();
+  document.getElementById("add-to-project-modal").showModal();
+}
+
+function toggleNewProjectName() {
+  const isNew = document.getElementById("add-to-project-select").value === "__new__";
+  const input = document.getElementById("add-to-project-new");
+  input.style.display = isNew ? "" : "none";
+  input.required = isNew;
+  if (isNew) setTimeout(() => input.focus(), 50);
+}
+
+async function submitAddToProject(ev) {
+  ev.preventDefault();
+  const sel = document.getElementById("add-to-project-select");
+  let id = sel.value;
+  let name = sel.selectedOptions[0]?.textContent;
+  if (id === "__new__") {
+    name = document.getElementById("add-to-project-new").value.trim();
+    const res = await fetch("/api/projects", { method: "POST", headers: headers(), body: JSON.stringify({ name }) });
+    if (!res.ok) { toast("Couldn't create that project"); return; }
+    id = (await res.json()).id;
+  }
+  const { kind, ids } = _addToProject;
+  for (const itemId of ids) {
+    await fetch(`/api/projects/${id}/items`, {
+      method: "POST", headers: headers(),
+      body: JSON.stringify({ item_kind: kind, item_id: itemId }),
+    });
+  }
+  document.getElementById("add-to-project-modal").close();
+  toast(`Added to ${name}`);
+}

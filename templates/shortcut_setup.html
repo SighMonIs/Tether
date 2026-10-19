@@ -259,7 +259,17 @@ Step 2: URL-encode the URLs magic variable from step 1.
 
 Step 3: Create a Text value equal to "{{ local_ip }}/?add=" followed by the URL-encoded text from step 2, with no space between them.
 
-Step 4: Open the URL from step 3 (this opens Safari on the Tether website with the link pre-filled, where you pick tags and save).</code>
+Step 4: Open the URL from step 3 (this opens Safari on the Tether website with the link pre-filled, where you pick tags and save).
+
+Put steps 2 to 4 inside an If action: "If URLs (from step 1) has any value". In the Otherwise branch, do this instead, so shared pictures and screenshots are saved as pictures:
+
+Step 5: Convert the Shortcut Input to JPEG.
+
+Step 6: Get Contents of URL "{{ local_ip }}/api/pictures" with method POST, a header "X-Tether-UUID" set to "{{ api_uuid }}", and a Form request body with one field named "file" of type File set to the converted image from step 5.
+
+Step 7: Get the value for key "id" from the contents of URL in step 6.
+
+Step 8: Open the URL "{{ local_ip }}/picture?edit=" followed by the value from step 7 (this opens Tether on the new picture so you can name and tag it).</code>
       <button class="copy-btn" style="align-self:flex-end;min-width:unset;padding:0.4rem 0.75rem;gap:0.4rem;font-size:0.82rem;border-radius:7px" onclick="copyId('ai-prompt')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         Copy prompt
@@ -293,7 +303,7 @@ Step 4: Open the URL from step 3 (this opens Safari on the Tether website with t
         <div class="step-num" style="background:#f59e0b">!</div>
         <div class="step-body">
           <strong>Enable "Show in Share Sheet" — do this before building</strong>
-          <p>Tap the shortcut name at the top to open its settings, then tap <span class="ui-text">Add to Share Sheet</span> (or toggle <span class="ui-text">Show in Share Sheet</span>). <b>Without this the shortcut will never appear when you tap Share in other apps.</b> You can do it now or after step 7 — just don't skip it.</p>
+          <p>Tap the shortcut name at the top to open its settings, then tap <span class="ui-text">Add to Share Sheet</span> (or toggle <span class="ui-text">Show in Share Sheet</span>). <b>Without this the shortcut will never appear when you tap Share in other apps.</b> You can do it now or at the end — just don't skip it.</p>
         </div>
       </div>
 
@@ -308,35 +318,100 @@ Step 4: Open the URL from step 3 (this opens Safari on the Tether website with t
       <div class="step">
         <div class="step-num">4</div>
         <div class="step-body">
-          <strong>Add: <span class="action-name">URL Encode</span></strong>
-          <p>Search for <span class="ui-text">URL Encode</span>. Set the input to <b>URLs</b> (from step 3) and leave the mode as <b>Encode</b>. This escapes any <code>&amp;</code> or <code>?</code> in the shared link so it survives being placed inside another URL.</p>
+          <strong>Add: <span class="action-name">If</span> — URLs <b>has any value</b></strong>
+          <p>Search for <span class="ui-text">If</span>. Set it to <b>URLs</b> (from step 3) <span class="ui-text">has any value</span>. This is how the shortcut tells a link from a picture: a screenshot or photo has no URL in it. Steps 5–7 go <b>inside</b> the If; steps 8–11 go in its <span class="ui-text">Otherwise</span> branch.</p>
         </div>
       </div>
 
       <div class="step">
         <div class="step-num">5</div>
         <div class="step-body">
-          <strong>Add: <span class="action-name">Text</span></strong>
-          <p>Search for <span class="ui-text">Text</span>. Set its content to:</p>
-          <div class="action-block">
-            <div class="ab-row">
-              <span class="cc"><code>{{ local_ip }}/?add=</code><button onclick="copyText('{{ local_ip }}/?add=')" title="Copy">&#x2398;</button></span>
-              <span class="ab-value">followed immediately by the <b>Encoded URL</b> magic variable (from step 4) — no space in between</span>
-            </div>
-          </div>
+          <strong>Link: <span class="action-name">URL Encode</span></strong>
+          <p>Search for <span class="ui-text">URL Encode</span>. Set the input to <b>URLs</b> (from step 3) and leave the mode as <b>Encode</b>. This escapes any <code>&amp;</code> or <code>?</code> in the shared link so it survives being placed inside another URL.</p>
         </div>
       </div>
 
       <div class="step">
         <div class="step-num">6</div>
         <div class="step-body">
-          <strong>Add: <span class="action-name">Open URLs</span></strong>
-          <p>Search for <span class="ui-text">Open URLs</span>. Set the input to the <b>Text</b> magic variable from step 5. This opens Safari on the Tether website with your link pre-filled, where you'll see the page title, description, and can pick tags and add a note before saving.</p>
+          <strong>Link: <span class="action-name">Text</span></strong>
+          <p>Search for <span class="ui-text">Text</span>. Set its content to:</p>
+          <div class="action-block">
+            <div class="ab-row">
+              <span class="cc"><code>{{ local_ip }}/?add=</code><button onclick="copyText('{{ local_ip }}/?add=')" title="Copy">&#x2398;</button></span>
+              <span class="ab-value">followed immediately by the <b>Encoded URL</b> magic variable (from step 5) — no space in between</span>
+            </div>
+          </div>
         </div>
       </div>
 
       <div class="step">
         <div class="step-num">7</div>
+        <div class="step-body">
+          <strong>Link: <span class="action-name">Open URLs</span></strong>
+          <p>Search for <span class="ui-text">Open URLs</span>. Set the input to the <b>Text</b> magic variable from step 6. This opens Safari on the Tether website with your link pre-filled, where you'll see the page title, description, and can pick tags and add a note before saving.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">8</div>
+        <div class="step-body">
+          <strong>Picture, in <span class="ui-text">Otherwise</span>: <span class="action-name">Convert Image</span></strong>
+          <p>Search for <span class="ui-text">Convert Image</span>. Set the input to <b>Shortcut Input</b> and the format to <b>JPEG</b>. iPhone photos are HEIC, which only Safari can show; JPEG works everywhere.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">9</div>
+        <div class="step-body">
+          <strong>Picture: <span class="action-name">Get Contents of URL</span></strong>
+          <p>Search for <span class="ui-text">Get Contents of URL</span>, tap <span class="ui-text">Show More</span> and set:</p>
+          <div class="action-block">
+            <div class="ab-row"><span class="ab-label">URL</span>
+              <span class="cc"><code>{{ local_ip }}/api/pictures</code><button onclick="copyText('{{ local_ip }}/api/pictures')" title="Copy">&#x2398;</button></span></div>
+            <div class="ab-row"><span class="ab-label">Method</span><span class="ab-value">POST</span></div>
+            <div class="ab-sep"></div>
+            <div class="ab-row"><span class="ab-label">Header</span>
+              <span class="cc"><code>X-Tether-UUID</code><button onclick="copyText('X-Tether-UUID')" title="Copy">&#x2398;</button></span>
+              <span class="ab-value">=</span>
+              <span class="cc"><code>{{ api_uuid }}</code><button onclick="copyText('{{ api_uuid }}')" title="Copy">&#x2398;</button></span></div>
+            <div class="ab-sep"></div>
+            <div class="ab-row"><span class="ab-label">Request Body</span><span class="ab-value">Form</span></div>
+            <div class="ab-row ab-indent">
+              <span class="ab-label">File field</span>
+              <span class="cc"><code>file</code><button onclick="copyText('file')" title="Copy">&#x2398;</button></span>
+              <span class="ab-value">= <b>Converted Image</b> (from step 8)</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">10</div>
+        <div class="step-body">
+          <strong>Picture: <span class="action-name">Get Dictionary Value</span></strong>
+          <p>Search for <span class="ui-text">Get Dictionary Value</span>. Get the value for key
+            <span class="cc" style="display:inline-flex"><code>id</code><button onclick="copyText('id')" title="Copy">&#x2398;</button></span>
+            in <b>Contents of URL</b> (from step 9).</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">11</div>
+        <div class="step-body">
+          <strong>Picture: <span class="action-name">Open URLs</span></strong>
+          <p>Set it to:</p>
+          <div class="action-block">
+            <div class="ab-row">
+              <span class="cc"><code>{{ local_ip }}/picture?edit=</code><button onclick="copyText('{{ local_ip }}/picture?edit=')" title="Copy">&#x2398;</button></span>
+              <span class="ab-value">followed immediately by the <b>Dictionary Value</b> (from step 10)</span>
+            </div>
+          </div>
+          <p style="margin-top:0.5rem">The picture is already saved under Pictures by now; this just opens it so you can name and tag it. Leave this step out if you'd rather tag later.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">12</div>
         <div class="step-body">
           <strong>Name and save</strong>
           <p>Tap the shortcut name at the top and rename it to
@@ -355,7 +430,7 @@ Step 4: Open the URL from step 3 (this opens Safari on the Tether website with t
     <div class="steps">
       <div class="step">
         <div class="step-num">1</div>
-        <div class="step-body"><strong>Open any page you want to save</strong><p>Works in Safari, YouTube, Reddit — anywhere with a Share button.</p></div>
+        <div class="step-body"><strong>Open any page, photo or screenshot you want to save</strong><p>Works in Safari, YouTube, Reddit, Photos, the screenshot editor — anywhere with a Share button.</p></div>
       </div>
       <div class="step">
         <div class="step-num">2</div>
@@ -363,7 +438,7 @@ Step 4: Open the URL from step 3 (this opens Safari on the Tether website with t
       </div>
       <div class="step">
         <div class="step-num">3</div>
-        <div class="step-body"><strong>Safari opens on Tether with the link ready</strong><p>Pick your tags, add a note if you want, and hit Save. Your phone must be on the same Wi-Fi network as the server.</p></div>
+        <div class="step-body"><strong>Safari opens on Tether</strong><p>A link opens ready to save: pick your tags, add a note if you want, and hit Save. A picture is already saved under Pictures; give it a name and tag if you like. One picture per share. Your phone must be on the same Wi-Fi network as the server.</p></div>
       </div>
     </div>
   </div>

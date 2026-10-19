@@ -9,7 +9,7 @@ from fastapi.templating import Jinja2Templates
 from pathlib import Path
 
 from db import db, get_setting
-from slugs import UNTAGGED, tag_paths, note_slugs
+from slugs import UNTAGGED, slug_map, tag_paths, note_slugs
 
 router = APIRouter()
 templates = Jinja2Templates(directory=str(Path(__file__).parent.parent / "templates"))
@@ -44,7 +44,7 @@ def _render_home(request: Request, view: dict):
 
 
 def _blank_view() -> dict:
-    return {"tag": None, "uncategorised": False, "type": "all", "ct": None, "note": None}
+    return {"tag": None, "uncategorised": False, "type": "all", "ct": None, "note": None, "project": None}
 
 
 def _view_from_query(request: Request) -> dict:
@@ -158,6 +158,46 @@ async def tag_notes(request: Request, path: str):
     view["uncategorised"] = uncat
     view["type"] = "editor"
     view["note"] = note_id
+    return _render_home(request, view)
+
+
+@router.get("/picture", response_class=HTMLResponse)
+async def all_pictures(request: Request):
+    view = _blank_view()
+    view["type"] = "pictures"
+    return _render_home(request, view)
+
+
+# /picture/<tag>[/<child-tag>]
+@router.get("/picture/{path:path}", response_class=HTMLResponse)
+async def tag_pictures(request: Request, path: str):
+    with db() as conn:
+        found = _resolve_tag(conn, "pictures", path)
+    if not found:
+        return RedirectResponse("/picture")
+    view = _blank_view()
+    view["type"] = "pictures"
+    view["tag"], view["uncategorised"] = found
+    return _render_home(request, view)
+
+
+@router.get("/project", response_class=HTMLResponse)
+async def all_projects(request: Request):
+    view = _blank_view()
+    view["type"] = "projects"
+    return _render_home(request, view)
+
+
+@router.get("/project/{slug}", response_class=HTMLResponse)
+async def project_page(request: Request, slug: str):
+    with db() as conn:
+        rows = conn.execute("SELECT id, name FROM projects ORDER BY id").fetchall()
+    project_id = next((i for i, s in slug_map(rows, "name").items() if s == slug.lower()), None)
+    if not project_id:
+        return RedirectResponse("/project")
+    view = _blank_view()
+    view["type"] = "projects"
+    view["project"] = project_id
     return _render_home(request, view)
 
 

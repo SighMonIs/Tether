@@ -30,10 +30,20 @@
         </div>
 
         <div class="notes-editor-scroll" id="note-editor-view" style="display:none">
-          <span class="notes-save-status" id="notes-save-status"></span>
-          <input type="text" id="note-title-input" class="note-title-input" placeholder="Untitled" autocomplete="off">
-          <div class="note-created" id="note-created"></div>
-          <div id="note-editor" class="note-editor"></div>
+          <div class="note-pane">
+            <!-- headed like a tag's page; the title stays editable in place -->
+            <div class="ct-head note-head">
+              <div class="ct-title">
+                <span class="note-title-grow" id="note-title-grow">
+                  <input type="text" size="1" id="note-title-input" class="note-title-input" placeholder="Untitled" autocomplete="off">
+                </span>
+                <button type="button" class="ct-edit" id="note-edit-btn" title="Edit note"><i data-lucide="pencil"></i></button>
+              </div>
+              <span class="notes-save-status" id="notes-save-status"></span>
+            </div>
+            <div class="note-created" id="note-created"></div>
+            <div id="note-editor" class="note-editor"></div>
+          </div>
         </div>
 
         <div class="feed-scroll" id="ct-view" style="display:none">
@@ -99,6 +109,23 @@
   </div>
 </dialog>
 
+<dialog id="note-edit-modal" class="modal">
+  <div class="modal-content">
+    <h2>Edit note</h2>
+    <form id="note-edit-form">
+      <div class="form-group">
+        <label for="note-edit-tag">Tag</label>
+        <select id="note-edit-tag" class="edit-tag-select"></select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-danger edit-tag-delete" id="note-edit-delete">Delete</button>
+        <button type="button" class="btn-ghost" onclick="document.getElementById('note-edit-modal').close()">Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
 <dialog id="new-note-modal" class="modal">
   <div class="modal-content">
     <h2>New note</h2>
@@ -115,7 +142,66 @@
   </div>
 </dialog>
 
+<input type="file" id="picture-input" accept="image/*" multiple hidden>
+
+<dialog id="picture-edit-modal" class="modal">
+  <div class="modal-content">
+    <h2>Edit picture</h2>
+    <form id="picture-edit-form" onsubmit="savePicture(event)">
+      <input type="hidden" id="picture-edit-id">
+      <div class="form-group">
+        <label for="picture-edit-title">Title</label>
+        <input type="text" id="picture-edit-title" placeholder="Picture" autocomplete="off">
+      </div>
+      <div class="form-group">
+        <label for="picture-edit-tag">Tag</label>
+        <select id="picture-edit-tag" class="edit-tag-select"></select>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-danger edit-tag-delete" onclick="deletePicture(document.getElementById('picture-edit-id').value)">Delete</button>
+        <button type="button" class="btn-ghost" onclick="document.getElementById('picture-edit-modal').close()">Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="project-modal" class="modal">
+  <div class="modal-content">
+    <h2 id="project-modal-title">New project</h2>
+    <form id="project-form" onsubmit="saveProject(event)">
+      <input type="hidden" id="project-id">
+      <div class="form-group">
+        <label for="project-name">Name</label>
+        <input type="text" id="project-name" placeholder="e.g. Kitchen renovation" required autocomplete="off">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-danger edit-tag-delete" id="project-delete" onclick="deleteProject()">Delete</button>
+        <button type="button" class="btn-ghost" onclick="document.getElementById('project-modal').close()">Cancel</button>
+        <button type="submit" class="btn-primary">Save</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
+<dialog id="add-to-project-modal" class="modal">
+  <div class="modal-content">
+    <h2 id="add-to-project-title">Add to project</h2>
+    <form id="add-to-project-form" onsubmit="submitAddToProject(event)">
+      <div class="form-group">
+        <label for="add-to-project-select">Project</label>
+        <select id="add-to-project-select" class="edit-tag-select" onchange="toggleNewProjectName()"></select>
+        <input type="text" id="add-to-project-new" placeholder="New project name" autocomplete="off" style="display:none;margin-top:0.5rem">
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn-ghost" onclick="document.getElementById('add-to-project-modal').close()">Cancel</button>
+        <button type="submit" class="btn-primary">Add</button>
+      </div>
+    </form>
+  </div>
+</dialog>
+
 {% endblock %}
 {% block scripts %}
-<script type="module" src="/static/notes.js?v=110"></script>
+<script type="module" src="/static/notes.js?v=112"></script>
 {% endblock %}

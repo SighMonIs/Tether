@@ -7,6 +7,7 @@ from contextlib import contextmanager
 _data_dir = Path(os.environ.get("TETHER_DATA", Path(__file__).parent))
 DB_PATH = _data_dir / "tether.db"
 NOTES_DIR = _data_dir / "notes"
+PICTURES_DIR = _data_dir / "pictures"
 
 # A content type is a user-named bucket inside a category, e.g. Cooking > "Vegan".
 CONTENT_KINDS = ("links", "notes")
@@ -115,6 +116,40 @@ def init_db():
                 content_type_id INTEGER NOT NULL REFERENCES content_types(id) ON DELETE CASCADE,
                 PRIMARY KEY (note_id, content_type_id)
             );
+
+            -- a picture has one tag, like a note; the file lives in PICTURES_DIR
+            CREATE TABLE IF NOT EXISTS pictures (
+                id            TEXT PRIMARY KEY,
+                filename      TEXT NOT NULL,
+                original_name TEXT,
+                mime          TEXT,
+                size          INTEGER,
+                created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            -- a project collects existing links, notes and pictures; nothing is saved into one
+            CREATE TABLE IF NOT EXISTS projects (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                name       TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS project_items (
+                project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                item_kind  TEXT    NOT NULL,   -- link | note | picture
+                item_id    TEXT    NOT NULL,
+                added_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (project_id, item_kind, item_id)
+            );
+            -- item_id points at one of three tables, so no foreign key can clean up after a delete
+            CREATE TRIGGER IF NOT EXISTS project_links_ad AFTER DELETE ON links BEGIN
+                DELETE FROM project_items WHERE item_kind='link' AND item_id=old.id;
+            END;
+            CREATE TRIGGER IF NOT EXISTS project_notes_ad AFTER DELETE ON notes BEGIN
+                DELETE FROM project_items WHERE item_kind='note' AND item_id=old.id;
+            END;
+            CREATE TRIGGER IF NOT EXISTS project_pictures_ad AFTER DELETE ON pictures BEGIN
+                DELETE FROM project_items WHERE item_kind='picture' AND item_id=old.id;
+            END;
         """)
 
         # Migrations for existing databases
@@ -131,7 +166,15 @@ def init_db():
                 [(i, r["id"]) for i, r in enumerate(rows)],
             )
 
+        # pictures from the first time round had neither
+        pic_cols = {r[1] for r in conn.execute("PRAGMA table_info(pictures)")}
+        if "title" not in pic_cols:
+            conn.execute("ALTER TABLE pictures ADD COLUMN title TEXT")
+        if "tag_id" not in pic_cols:
+            conn.execute("ALTER TABLE pictures ADD COLUMN tag_id INTEGER REFERENCES tags(id) ON DELETE SET NULL")
+
         NOTES_DIR.mkdir(parents=True, exist_ok=True)
+        PICTURES_DIR.mkdir(parents=True, exist_ok=True)
         _migrate_to_content_types(conn)
         _drop_unused_kinds(conn)
         _collapse_extra_content_types(conn)
@@ -332,10 +375,10 @@ def _drop_read_columns(conn):
 
 
 def _drop_unused_kinds(conn):
-    """Pictures and folders were dropped from the app. Clear the leftovers, but
-    only while they hold nothing, so no data can go with them."""
+    """Folders, and the first pictures' content types, were dropped from the app.
+    Clear the leftovers, but only while they hold nothing, so no data can go with them."""
     tables = {r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
-    for t in ("picture_content_types", "pictures"):
+    for t in ("picture_content_types",):
         if t in tables and conn.execute(f"SELECT COUNT(*) c FROM {t}").fetchone()["c"] == 0:
             conn.execute(f"DROP TABLE {t}")
     empty_folders = conn.execute("""
