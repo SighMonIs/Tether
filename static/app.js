@@ -756,7 +756,7 @@ async function openQuickAdd(url) {
   document.getElementById("quick-add-desc").value = meta.description || "";
   document.getElementById("quick-add-url").textContent = url;
   const catSelect = document.getElementById("quick-add-category");
-  fillCategorySelect(catSelect, "");
+  fillCategorySelect(catSelect, "", "No tag", false);   // quick add has its own new-tag field
   catSelect.insertAdjacentHTML("beforeend", `<option value="__new__">+ New tag…</option>`);
   document.getElementById("quick-add-new-cat").value = "";
   toggleQuickAddNewCat();
@@ -878,10 +878,44 @@ function tagOptions(tags, selectedId) {
   ).join("");
 }
 
-function fillCategorySelect(el, selectedId, emptyLabel = "No tag") {
+function fillCategorySelect(el, selectedId, emptyLabel = "No tag", withNew = true) {
   if (!el) return;
-  el.innerHTML = `<option value="">${emptyLabel}</option>` + tagOptions(_sidebarTags, selectedId);
+  el.innerHTML = `<option value="">${emptyLabel}</option>` + tagOptions(_sidebarTags, selectedId)
+    + (withNew ? newTagOption() : "");
+  el.dataset.prev = el.value;
 }
+
+// every tag picker ends with "+ New tag…": picking it asks for a name, makes the tag and selects it.
+// The tag is made in the picker's data-tag-kind, else the side you're on.
+const NEW_TAG = "__newtag__";
+const newTagOption = () => `<option value="${NEW_TAG}">+ New tag…</option>`;
+window.newTagOption = newTagOption;
+
+// capture runs before the picker's own change listeners, so they never see the placeholder value
+document.addEventListener("change", async ev => {
+  const el = ev.target;
+  if (!(el instanceof HTMLSelectElement)) return;
+  if (el.value !== NEW_TAG) { el.dataset.prev = el.value; return; }
+  ev.stopImmediatePropagation();
+  const back = () => { el.value = el.dataset.prev ?? el.options[0]?.value ?? ""; };
+  // ponytail: native prompt; swap for a dialog if it looks out of place
+  const name = prompt("New tag name")?.trim();
+  if (!name) return back();
+  const kind = el.dataset.tagKind || MODE;
+  const res = await fetch("/api/tags", { method: "POST", headers: headers(), body: JSON.stringify({ name, kind }) });
+  if (!res.ok) { toast("Couldn't create that tag"); return back(); }
+  const tag = await res.json();
+  if (!el.querySelector(`option[value="${tag.id}"]`)) {
+    el.querySelector(`option[value="${NEW_TAG}"]`).insertAdjacentHTML("beforebegin",
+      `<option value="${tag.id}">${escHtml(tag.name)}</option>`);
+  }
+  el.value = el.dataset.prev = String(tag.id);
+  // savers look tags up in _sidebarTags; a tag for this side also shows in the sidebar
+  if (kind === MODE) await loadSidebarCats();
+  else if (!_sidebarTags.some(t => t.id === tag.id)) _sidebarTags.push(tag);
+  document.dispatchEvent(new CustomEvent("tether:tag-created", { detail: tag }));
+  el.dispatchEvent(new Event("change", { bubbles: true }));
+}, true);
 
 let _allTags  = []; // [{id, name, color}] from server
 

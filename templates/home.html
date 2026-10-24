@@ -79,7 +79,7 @@
       </div>
       <div class="form-group">
         <label for="edit-category">Tag</label>
-        <select id="edit-category" class="edit-tag-select"></select>
+        <select id="edit-category" class="edit-tag-select" data-tag-kind="links"></select>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn-ghost" onclick="document.getElementById('edit-modal').close()">Cancel</button>
@@ -211,5 +211,5 @@
 
 {% endblock %}
 {% block scripts %}
-<script type="module" src="/static/notes.js?v=113"></script>
+<script type="module" src="/static/notes.js?v=114"></script>
 {% endblock %}

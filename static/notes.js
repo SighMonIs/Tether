@@ -368,10 +368,19 @@ document.getElementById("note-edit-delete").addEventListener("click", async () =
 
 window.createNoteInCategory = () => createNote();
 
+// a tag made from any picker joins the New note list, which the Edit note picker copies
+document.addEventListener("tether:tag-created", ({ detail: tag }) => {
+  if (tag.kind !== "notes" || allTags.some(t => t.id === tag.id)) return;
+  allTags.push(tag);
+  if (newNoteTag.querySelector(`option[value="${tag.id}"]`)) return;
+  newNoteTag.querySelector('option[value="__newtag__"]')
+    ?.insertAdjacentHTML("beforebegin", `<option value="${tag.id}">${escHtml(tag.name)}</option>`);
+});
+
 async function loadTags() {
   const res = await fetch("/api/tags?kind=notes", { headers: authHeaders(false) });
   allTags = res.ok ? await res.json() : [];
-  newNoteTag.innerHTML = `<option value="0">No tag</option>` + window.tagOptions(allTags);
+  newNoteTag.innerHTML = `<option value="0">No tag</option>` + window.tagOptions(allTags) + window.newTagOption();
 
   if (filterTagId()) {
     const tag = allTags.find(t => t.id === filterTagId());
