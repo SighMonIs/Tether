@@ -258,6 +258,18 @@ class TagCreate(BaseModel):
     name: str
     color: str | None = None
     kind: str = "links"
+    parent_id: int | None = None
+
+
+def _check_tag_parent(conn, tag_id: int, parent: int):
+    """One level only: the parent must be top-level, and a parent can't become a child."""
+    ok = conn.execute(
+        "SELECT 1 FROM tags p JOIN tags t ON t.id=? "
+        "WHERE p.id=? AND p.parent_id IS NULL AND p.id<>t.id AND p.kind=t.kind",
+        (tag_id, parent)).fetchone()
+    has_kids = conn.execute("SELECT 1 FROM tags WHERE parent_id=?", (tag_id,)).fetchone()
+    if not ok or has_kids:
+        raise HTTPException(status_code=400, detail="Tags nest one level deep")
 
 
 @router.post("/tags", status_code=201)
@@ -267,7 +279,10 @@ def create_tag(body: TagCreate, x_tether_uuid: str | None = Header(default=None)
         raise HTTPException(status_code=400, detail="kind must be links, notes or pictures")
     with db() as conn:
         tag_id = _tag_by_name(conn, body.name, body.kind, body.color)
-        row = conn.execute("SELECT id, name, color, position, kind FROM tags WHERE id=?",
+        if body.parent_id is not None:
+            _check_tag_parent(conn, tag_id, body.parent_id)
+            conn.execute("UPDATE tags SET parent_id=? WHERE id=?", (body.parent_id, tag_id))
+        row = conn.execute("SELECT id, name, color, position, parent_id, kind FROM tags WHERE id=?",
                            (tag_id,)).fetchone()
         for i, kind in enumerate(("links", "notes")):
             if not conn.execute("SELECT 1 FROM content_types WHERE tag_id=? AND kind=?",
@@ -308,14 +323,7 @@ def update_tag(tag_id: int, body: TagUpdate, x_tether_uuid: str | None = Header(
         if "parent_id" in body.model_fields_set:
             parent = body.parent_id
             if parent is not None:
-                # one level only: the parent must be top-level, and a parent can't become a child
-                ok = conn.execute(
-                    "SELECT 1 FROM tags p JOIN tags t ON t.id=? "
-                    "WHERE p.id=? AND p.parent_id IS NULL AND p.id<>t.id AND p.kind=t.kind",
-                    (tag_id, parent)).fetchone()
-                has_kids = conn.execute("SELECT 1 FROM tags WHERE parent_id=?", (tag_id,)).fetchone()
-                if not ok or has_kids:
-                    raise HTTPException(status_code=400, detail="Tags nest one level deep")
+                _check_tag_parent(conn, tag_id, parent)
             conn.execute("UPDATE tags SET parent_id=? WHERE id=?", (parent, tag_id))
         row = conn.execute("SELECT id, name, color FROM tags WHERE id=?", (tag_id,)).fetchone()
         if not row:
@@ -739,7 +747,7 @@ def _note_path(note_id: str) -> Path:
 
 
 _NOTE_SELECT = """
-    SELECT n.id, n.title, n.tag_id, n.link_id, n.created_at, n.updated_at,
+    SELECT n.id, n.title, n.tag_id, n.link_id, n.parent_id, n.created_at, n.updated_at,
            t.name AS tag_name, t.color AS tag_color
     FROM notes n
     LEFT JOIN tags t ON t.id = n.tag_id
@@ -793,6 +801,18 @@ class NoteCreate(BaseModel):
     title: str | None = None
     tag_id: int | None = None
     link_id: str | None = None
+    parent_id: str | None = None   # a sub-note lands in its parent's tag
+
+
+def _note_parent(conn, note_id: str | None, parent_id: str):
+    """One level deep like tags: the parent must be top-level, a note with
+    sub-notes can't become one, and nothing sits under itself. Returns the
+    parent's tag, which the sub-note shares."""
+    row = conn.execute("SELECT tag_id, parent_id FROM notes WHERE id=?", (parent_id,)).fetchone()
+    has_kids = note_id and conn.execute("SELECT 1 FROM notes WHERE parent_id=?", (note_id,)).fetchone()
+    if not row or row["parent_id"] or parent_id == note_id or has_kids:
+        raise HTTPException(status_code=400, detail="Notes nest one level deep")
+    return row["tag_id"]
 
 
 @router.post("/notes", status_code=201)
@@ -804,10 +824,13 @@ def create_note(body: NoteCreate, x_tether_uuid: str | None = Header(default=Non
     with db() as conn:
         min_pos = conn.execute("SELECT MIN(position) FROM notes").fetchone()[0]
         position = (min_pos - 1) if min_pos is not None else 0
-        tag_id = _notes_tag(conn, body.tag_id)
+        if body.parent_id:
+            tag_id = _note_parent(conn, None, body.parent_id)
+        else:
+            tag_id = _notes_tag(conn, body.tag_id)
         conn.execute(
-            "INSERT INTO notes(id, title, tag_id, link_id, position) VALUES (?,?,?,?,?)",
-            (note_id, title, tag_id, body.link_id, position),
+            "INSERT INTO notes(id, title, tag_id, link_id, parent_id, position) VALUES (?,?,?,?,?,?)",
+            (note_id, title, tag_id, body.link_id, body.parent_id or None, position),
         )
         _file_note(conn, note_id, tag_id)
         row = conn.execute(f"{_NOTE_SELECT} WHERE n.id=?", (note_id,)).fetchone()
@@ -845,6 +868,7 @@ class NoteUpdate(BaseModel):
     title: str | None = None
     content: str | None = None
     tag_id: int | None = None  # 0 clears the category; omit/None leaves it unchanged
+    parent_id: str | None = None  # sent as null to make it a top-level note
 
 
 @router.patch("/notes/{note_id}")
@@ -860,17 +884,32 @@ def update_note(note_id: str, body: NoteUpdate, x_tether_uuid: str | None = Head
                 "UPDATE notes SET title=?, updated_at=datetime('now') WHERE id=?",
                 (body.title.strip() or "Untitled", note_id),
             )
-        if body.tag_id is not None:
-            conn.execute(
-                "UPDATE notes SET tag_id=?, updated_at=datetime('now') WHERE id=?",
-                (_notes_tag(conn, body.tag_id), note_id),
-            )
-            _file_note(conn, note_id, _notes_tag(conn, body.tag_id))
+        if "parent_id" in body.model_fields_set:
+            tag_id = _note_parent(conn, note_id, body.parent_id) if body.parent_id else None
+            conn.execute("UPDATE notes SET parent_id=?, updated_at=datetime('now') WHERE id=?",
+                         (body.parent_id or None, note_id))
+            if body.parent_id:
+                _move_note(conn, note_id, tag_id)
+        if body.tag_id is not None and not body.parent_id:
+            _move_note(conn, note_id, _notes_tag(conn, body.tag_id))
         if body.content is not None:
             path.write_text(body.content, encoding="utf-8")
             conn.execute("UPDATE notes SET updated_at=datetime('now') WHERE id=?", (note_id,))
         result = conn.execute(f"{_NOTE_SELECT} WHERE n.id=?", (note_id,)).fetchone()
     return _note_dict(result)
+
+
+def _move_note(conn, note_id: str, tag_id: int | None):
+    """Change a note's tag. Its sub-notes go with it; a sub-note moved away from
+    its parent's tag becomes a top-level note there."""
+    conn.execute("UPDATE notes SET tag_id=?, updated_at=datetime('now') WHERE id=?", (tag_id, note_id))
+    _file_note(conn, note_id, tag_id)
+    conn.execute("UPDATE notes SET parent_id=NULL WHERE id=? AND parent_id NOT IN "
+                 "(SELECT id FROM notes WHERE tag_id IS ?)", (note_id, tag_id))
+    for kid in conn.execute("SELECT id FROM notes WHERE parent_id=? AND tag_id IS NOT ?",
+                            (note_id, tag_id)).fetchall():
+        conn.execute("UPDATE notes SET tag_id=? WHERE id=?", (tag_id, kid["id"]))
+        _file_note(conn, kid["id"], tag_id)
 
 
 @router.delete("/notes/{note_id}", status_code=204)

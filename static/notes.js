@@ -281,14 +281,42 @@ titleInput.addEventListener("input", () => {
   scheduleSave();
 });
 
-/* ── Edit note (tag, delete) ─────────────────────────────── */
+/* ── Parent note picker ──────────────────────────────────── */
+// one level deep like tags: only a tag's top-level notes can be parents.
+// Fills `sel` for the tag picked in `tagSel`; returns that tag's notes.
+async function fillParentSelect(sel, tagSel, selectedId = null, selfId = null) {
+  const tagId = Number(tagSel.value) || null;
+  const qs = tagId ? `tag=${tagId}` : "uncategorised=true";
+  const res = await fetch(`/api/notes?${qs}`, { headers: authHeaders(false) });
+  const notes = res.ok ? await res.json() : [];
+  sel.innerHTML = `<option value="">None (top level)</option>` + notes
+    .filter(n => !n.parent_id && n.id !== selfId)
+    .map(n => `<option value="${n.id}" ${n.id === selectedId ? "selected" : ""}>${escHtml(n.title || "Untitled")}</option>`)
+    .join("");
+  return notes;
+}
+
+/* ── Edit note (tag, parent, delete) ─────────────────────── */
 const noteEditModal = document.getElementById("note-edit-modal");
 const noteEditTag = document.getElementById("note-edit-tag");
+const noteEditParent = document.getElementById("note-edit-parent");
+let currentNote = null;   // the open note as the server last sent it
 
-document.getElementById("note-edit-btn").addEventListener("click", () => {
+async function fillEditParent() {
+  const notes = await fillParentSelect(noteEditParent, noteEditTag, currentNote?.parent_id, currentNoteId);
+  // a note with sub-notes of its own can't become one
+  const hasKids = notes.some(n => n.parent_id === currentNoteId);
+  noteEditParent.disabled = hasKids;
+  noteEditParent.title = hasKids ? "This note has sub-notes of its own" : "";
+}
+
+noteEditTag.addEventListener("change", fillEditParent);
+
+document.getElementById("note-edit-btn").addEventListener("click", async () => {
   if (!currentNoteId) return;
   noteEditTag.innerHTML = newNoteTag.innerHTML;     // the same Notes tags
-  noteEditTag.value = String(filterTagId() || 0);
+  noteEditTag.value = String(currentNote?.tag_id || 0);
+  await fillEditParent();
   noteEditModal.showModal();
 });
 
@@ -296,19 +324,25 @@ document.getElementById("note-edit-form").addEventListener("submit", async ev =>
   ev.preventDefault();
   const id = currentNoteId;
   const tagId = Number(noteEditTag.value) || null;
+  const parentId = noteEditParent.disabled ? (currentNote?.parent_id || null) : (noteEditParent.value || null);
   noteEditModal.close();
-  if (!id || tagId === filterTagId()) return;
+  if (!id) return;
+  const body = {};
+  if (tagId !== (currentNote?.tag_id || null)) body.tag_id = tagId || 0;
+  if (parentId !== (currentNote?.parent_id || null)) body.parent_id = parentId;
+  if (!Object.keys(body).length) return;
   clearTimeout(saveTimeout);
   await saveCurrentNote();
   const res = await fetch(`/api/notes/${id}`, {
     method: "PATCH",
     headers: authHeaders(),
-    body: JSON.stringify({ tag_id: tagId || 0 }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) return;
   const note = await res.json();
+  currentNote = note;
   // follow the note into its new tag: sidebar, page title and path
-  await window.showNoteTag?.(tagId);
+  await window.showNoteTag?.(note.tag_id);
   window.setSidebarNote?.(note.id, note.slug);
 });
 
@@ -321,6 +355,7 @@ document.getElementById("note-edit-delete").addEventListener("click", async () =
   await fetch(`/api/notes/${id}`, { method: "DELETE", headers: authHeaders(false) });
   notesCache = notesCache.filter(n => n.id !== id);
   currentNoteId = null;
+  currentNote = null;
   suppressDirty = true;
   setTitle("");
   editor.commands.setContent("");
@@ -376,6 +411,7 @@ async function saveCurrentNote() {
     if (res.ok) {
       isDirty = false;
       const note = await res.json();
+      if (note.id === currentNoteId) currentNote = note;
       const idx = notesCache.findIndex(n => n.id === note.id);
       if (idx !== -1) notesCache[idx] = note;
       window.reloadSidebarNotes?.();
@@ -402,6 +438,7 @@ async function openNote(id, switchTab = true) {
   clearTimeout(saveTimeout);
   await saveCurrentNote();
   currentNoteId = id;
+  currentNote = note;
 
   suppressDirty = true;
   setTitle(note.title === "Untitled" ? "" : note.title);
@@ -418,9 +455,13 @@ async function openNote(id, switchTab = true) {
 // New note asks which tag it belongs in, defaulting to the one you're in
 const newNoteModal = document.getElementById("new-note-modal");
 const newNoteTag = document.getElementById("new-note-tag");
+const newNoteParent = document.getElementById("new-note-parent");
 
-function createNote() {
+newNoteTag.addEventListener("change", () => fillParentSelect(newNoteParent, newNoteTag));
+
+async function createNote() {
   newNoteTag.value = String(filterTagId() || 0);
+  await fillParentSelect(newNoteParent, newNoteTag);
   newNoteModal.showModal();
   setTimeout(() => newNoteTag.focus(), 50);
 }
@@ -431,7 +472,7 @@ document.getElementById("new-note-form").addEventListener("submit", async ev => 
   const res = await fetch("/api/notes", {
     method: "POST",
     headers: authHeaders(),
-    body: JSON.stringify({ title: "Untitled", tag_id: tagId }),
+    body: JSON.stringify({ title: "Untitled", tag_id: tagId, parent_id: newNoteParent.value || null }),
   });
   newNoteModal.close();
   if (!res.ok) return;

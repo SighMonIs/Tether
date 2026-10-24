@@ -117,6 +117,10 @@
         <label for="note-edit-tag">Tag</label>
         <select id="note-edit-tag" class="edit-tag-select"></select>
       </div>
+      <div class="form-group">
+        <label for="note-edit-parent">Parent note</label>
+        <select id="note-edit-parent" class="edit-tag-select"></select>
+      </div>
       <div class="modal-actions">
         <button type="button" class="btn-danger edit-tag-delete" id="note-edit-delete">Delete</button>
         <button type="button" class="btn-ghost" onclick="document.getElementById('note-edit-modal').close()">Cancel</button>
@@ -133,6 +137,10 @@
       <div class="form-group">
         <label for="new-note-tag">Tag</label>
         <select id="new-note-tag" class="edit-tag-select"></select>
+      </div>
+      <div class="form-group">
+        <label for="new-note-parent">Parent note</label>
+        <select id="new-note-parent" class="edit-tag-select"></select>
       </div>
       <div class="modal-actions">
         <button type="button" class="btn-ghost" onclick="document.getElementById('new-note-modal').close()">Cancel</button>
@@ -203,5 +211,5 @@
 
 {% endblock %}
 {% block scripts %}
-<script type="module" src="/static/notes.js?v=112"></script>
+<script type="module" src="/static/notes.js?v=113"></script>
 {% endblock %}

@@ -354,6 +354,15 @@ function initSearch() {
 
 /* ── Categories page ─────────────────────────────────────── */
 function openNewTagModal() {
+  const sel = document.getElementById("new-tag-parent");
+  if (sel) {
+    // one level deep, so only top-level tags can be parents; open on a tag's page, that tag is the default
+    const tops = _sidebarTags.filter(t => !t.parent_id);
+    const here = tops.find(t => String(t.id) === currentTagId());
+    sel.innerHTML = `<option value="">None (top level)</option>` + tops
+      .map(p => `<option value="${p.id}" ${p === here ? "selected" : ""}>${escHtml(p.name)}</option>`).join("");
+    sel.closest(".form-group").hidden = !tops.length;
+  }
   document.getElementById("new-tag-modal")?.showModal();
   setTimeout(() => document.getElementById("new-tag-name")?.focus(), 50);
 }
@@ -429,16 +438,22 @@ async function createTag(e) {
   e.preventDefault();
   const name = document.getElementById("new-tag-name").value.trim();
   const color = document.getElementById("new-tag-color").value;
+  const parent = document.getElementById("new-tag-parent")?.value;
   if (!name) return;
   const res = await fetch("/api/tags", {
     method: "POST",
     headers: headers(),
-    body: JSON.stringify({ name, color, kind: MODE }),
+    body: JSON.stringify({ name, color, kind: MODE, parent_id: parent ? Number(parent) : null }),
   });
-  if (res.ok) {
-    toast("Tag Created");
-    setTimeout(() => location.reload(), 500);
+  if (!res.ok) { toast("Couldn't create that tag"); return; }
+  if (parent) {
+    // open the parent so the new tag doesn't land in a closed group
+    const f = foldState();
+    MODE === "notes" ? f.add(Number(parent)) : f.delete(Number(parent));
+    saveFoldState(f);
   }
+  toast("Tag Created");
+  setTimeout(() => location.reload(), 500);
 }
 
 let _tagDeleteId = null;
@@ -1071,6 +1086,30 @@ function categoryPath(tagId, tail = "") {
   return path ? `${MODE_ROOT}/${path}${tail}` : MODE_ROOT;
 }
 
+// sub-notes follow their parent; one whose parent isn't in the list shows at the top level
+function nestNotes(notes) {
+  const ids = new Set(notes.map(n => n.id));
+  const isTop = n => !n.parent_id || !ids.has(n.parent_id);
+  return notes.filter(isTop).flatMap(p => [
+    { ...p, _sub: false, _kids: notes.filter(k => !isTop(k) && k.parent_id === p.id).length },
+    ...notes.filter(k => !isTop(k) && k.parent_id === p.id).map(k => ({ ...k, _sub: true, _kids: 0 })),
+  ]);
+}
+window.nestNotes = nestNotes;
+
+// a note with sub-notes folds over them, open by default
+const SUBNOTE_FOLD_KEY = "closedNoteParents";
+function closedNoteParents() {
+  try { return new Set(JSON.parse(localStorage.getItem(SUBNOTE_FOLD_KEY) || "[]")); }
+  catch { return new Set(); }
+}
+function toggleNoteFold(id) {
+  const s = closedNoteParents();
+  s.has(id) ? s.delete(id) : s.add(id);
+  try { localStorage.setItem(SUBNOTE_FOLD_KEY, JSON.stringify([...s])); } catch {}
+  renderSidebar();
+}
+
 function folderSvg(color) {
   return `<svg class="sidebar-cat-folder" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="1.8"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`;
 }
@@ -1117,15 +1156,20 @@ function renderSidebar() {
     if (MODE !== "notes") return "";
     const deep = _sidebarTags.some(t => t.id === key && !isTop(t)) ? "deep" : "";
     const tagId = key === "u" ? "" : key;
-    return _sidebarNotes
-      .filter(n => String(n.tag_id ?? "u") === String(key))
+    const closed = closedNoteParents();
+    return nestNotes(_sidebarNotes.filter(n => String(n.tag_id ?? "u") === String(key)))
+      .filter(n => !n._sub || !closed.has(n.parent_id))
       .map(n => `
-        <li class="sidebar-note ${deep}">
+        <li class="sidebar-note ${deep} ${n._sub ? "sub" : ""}">
           <a href="${categoryPath(tagId, `/${n.slug}`)}" data-note="${n.id}" data-tag="${tagId}"
              class="sidebar-cat-link ${_openNoteId === n.id ? "active" : ""}">
             <i data-lucide="${n.link_id ? "link" : "file-text"}"></i>
             <span class="sidebar-cat-name">${escHtml(n.title || "Untitled")}</span>
           </a>
+          ${n._kids ? `
+          <button type="button" class="tag-chevron" data-note-toggle="${n.id}" title="${closed.has(n.id) ? "Expand" : "Collapse"}">
+            <i data-lucide="${closed.has(n.id) ? "chevron-right" : "chevron-down"}"></i>
+          </button>` : ""}
         </li>`).join("")
       || `<li class="sidebar-note sidebar-empty ${deep}">No notes</li>`;
   };
@@ -1153,6 +1197,9 @@ function renderSidebar() {
         kids.map(k => withNotes(k.id, tagRow(k, t.id, []))).join("") + notesOf(t.id);
     }).join("");
 
+  ul.querySelectorAll("[data-note-toggle]").forEach(btn => {
+    btn.addEventListener("click", () => toggleNoteFold(btn.dataset.noteToggle));
+  });
   ul.querySelectorAll("[data-toggle]").forEach(btn => {
     btn.addEventListener("click", () => toggleFold(btn.dataset.toggle === "u" ? "u" : Number(btn.dataset.toggle)));
   });
@@ -1390,7 +1437,7 @@ async function loadSidebarCats() {
 function noteCardHtml(n) {
   const tagId = n.tag_id ? String(n.tag_id) : "";
   return `
-    <article class="link-row" data-id="${n.id}">
+    <article class="link-row ${n._sub ? "sub-note" : ""}" data-id="${n.id}">
       ${_selectMode
         ? `<label class="link-pick">
              <input type="checkbox" class="link-check" value="${n.id}" ${_selected.has(n.id) ? "checked" : ""}>
@@ -1732,7 +1779,8 @@ function renderCtPane(ctId) {
 
   let body = kind === "pictures"
     ? (items.length ? `<div class="picture-grid">${items.map(pictureCardHtml).join("")}</div>` : "")
-    : items.map(l => kind === "links" ? linkCardHtml(l, true) : noteCardHtml(l)).join("");
+    : kind === "notes" ? nestNotes(items).map(noteCardHtml).join("")
+    : items.map(l => linkCardHtml(l, true)).join("");
   body = body || `<div class="empty-state">${n ? `No ${kind} match that filter.`
     : kind === "pictures" ? "No pictures in here yet. Upload some, paste a screenshot, or drop files here."
     : `No ${kind} in here yet.`}</div>`;

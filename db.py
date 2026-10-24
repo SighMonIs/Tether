@@ -93,6 +93,7 @@ def init_db():
                 tag_id     INTEGER REFERENCES tags(id) ON DELETE SET NULL,
                 link_id    TEXT REFERENCES links(id) ON DELETE SET NULL,
                 position   INTEGER NOT NULL DEFAULT 0,
+                parent_id  TEXT REFERENCES notes(id) ON DELETE SET NULL,
                 created_at TEXT NOT NULL DEFAULT (datetime('now')),
                 updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
@@ -158,6 +159,9 @@ def init_db():
             conn.execute("ALTER TABLE notes ADD COLUMN tag_id INTEGER REFERENCES tags(id) ON DELETE SET NULL")
         if "link_id" not in note_cols:
             conn.execute("ALTER TABLE notes ADD COLUMN link_id TEXT REFERENCES links(id) ON DELETE SET NULL")
+        # a note can sit under another note in the same tag, one level deep like tags
+        if "parent_id" not in note_cols:
+            conn.execute("ALTER TABLE notes ADD COLUMN parent_id TEXT REFERENCES notes(id) ON DELETE SET NULL")
         if "position" not in note_cols:
             conn.execute("ALTER TABLE notes ADD COLUMN position INTEGER NOT NULL DEFAULT 0")
             rows = conn.execute("SELECT id FROM notes ORDER BY updated_at DESC").fetchall()

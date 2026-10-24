@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=143">
+  <link rel="stylesheet" href="/static/style.css?v=144">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <meta name="tether-uuid" content="{{ tether_uuid | default('') }}">
   <script>
@@ -200,6 +200,10 @@
           <label for="new-tag-color">Color</label>
           <input type="color" id="new-tag-color" value="#6366f1">
         </div>
+        <div class="form-group">
+          <label for="new-tag-parent">Parent</label>
+          <select id="new-tag-parent" class="edit-tag-select"></select>
+        </div>
         <div class="modal-actions">
           <button type="button" class="btn-ghost" onclick="document.getElementById('new-tag-modal').close()">Cancel</button>
           <button type="submit" class="btn-primary">Create</button>
@@ -261,7 +265,7 @@
     </button>
   </div>
 
-  <script src="/static/app.js?v=127"></script>
+  <script src="/static/app.js?v=128"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
