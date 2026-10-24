@@ -261,7 +261,7 @@ Step 3: Create a Text value equal to "{{ local_ip }}/?add=" followed by the URL-
 
 Step 4: Open the URL from step 3 (this opens Safari on the Tether website with the link pre-filled, where you pick tags and save).
 
-Put steps 2 to 4 inside an If action: "If URLs (from step 1) has any value". In the Otherwise branch, do this instead, so shared pictures and screenshots are saved as pictures:
+Put steps 2 to 4 inside an If action: "If URLs (from step 1) has any value". In the Otherwise branch, do this instead, so shared pictures and screenshots are saved as images:
 
 Step 5: Convert the Shortcut Input to JPEG.
 
@@ -269,7 +269,7 @@ Step 6: Get Contents of URL "{{ local_ip }}/api/pictures" with method POST, a he
 
 Step 7: Get the value for key "id" from the contents of URL in step 6.
 
-Step 8: Open the URL "{{ local_ip }}/picture?edit=" followed by the value from step 7 (this opens Tether on the new picture so you can name and tag it).</code>
+Step 8: Open the URL "{{ local_ip }}/image?edit=" followed by the value from step 7 (this opens Tether on the new image so you can name and tag it).</code>
       <button class="copy-btn" style="align-self:flex-end;min-width:unset;padding:0.4rem 0.75rem;gap:0.4rem;font-size:0.82rem;border-radius:7px" onclick="copyId('ai-prompt')">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
         Copy prompt
@@ -356,7 +356,7 @@ Step 8: Open the URL "{{ local_ip }}/picture?edit=" followed by the value from s
       <div class="step">
         <div class="step-num">8</div>
         <div class="step-body">
-          <strong>Picture, in <span class="ui-text">Otherwise</span>: <span class="action-name">Convert Image</span></strong>
+          <strong>Image, in <span class="ui-text">Otherwise</span>: <span class="action-name">Convert Image</span></strong>
           <p>Search for <span class="ui-text">Convert Image</span>. Set the input to <b>Shortcut Input</b> and the format to <b>JPEG</b>. iPhone photos are HEIC, which only Safari can show; JPEG works everywhere.</p>
         </div>
       </div>
@@ -364,7 +364,7 @@ Step 8: Open the URL "{{ local_ip }}/picture?edit=" followed by the value from s
       <div class="step">
         <div class="step-num">9</div>
         <div class="step-body">
-          <strong>Picture: <span class="action-name">Get Contents of URL</span></strong>
+          <strong>Image: <span class="action-name">Get Contents of URL</span></strong>
           <p>Search for <span class="ui-text">Get Contents of URL</span>, tap <span class="ui-text">Show More</span> and set:</p>
           <div class="action-block">
             <div class="ab-row"><span class="ab-label">URL</span>
@@ -388,7 +388,7 @@ Step 8: Open the URL "{{ local_ip }}/picture?edit=" followed by the value from s
       <div class="step">
         <div class="step-num">10</div>
         <div class="step-body">
-          <strong>Picture: <span class="action-name">Get Dictionary Value</span></strong>
+          <strong>Image: <span class="action-name">Get Dictionary Value</span></strong>
           <p>Search for <span class="ui-text">Get Dictionary Value</span>. Get the value for key
             <span class="cc" style="display:inline-flex"><code>id</code><button onclick="copyText('id')" title="Copy">&#x2398;</button></span>
             in <b>Contents of URL</b> (from step 9).</p>
@@ -398,15 +398,15 @@ Step 8: Open the URL "{{ local_ip }}/picture?edit=" followed by the value from s
       <div class="step">
         <div class="step-num">11</div>
         <div class="step-body">
-          <strong>Picture: <span class="action-name">Open URLs</span></strong>
+          <strong>Image: <span class="action-name">Open URLs</span></strong>
           <p>Set it to:</p>
           <div class="action-block">
             <div class="ab-row">
-              <span class="cc"><code>{{ local_ip }}/picture?edit=</code><button onclick="copyText('{{ local_ip }}/picture?edit=')" title="Copy">&#x2398;</button></span>
+              <span class="cc"><code>{{ local_ip }}/image?edit=</code><button onclick="copyText('{{ local_ip }}/image?edit=')" title="Copy">&#x2398;</button></span>
               <span class="ab-value">followed immediately by the <b>Dictionary Value</b> (from step 10)</span>
             </div>
           </div>
-          <p style="margin-top:0.5rem">The picture is already saved under Pictures by now; this just opens it so you can name and tag it. Leave this step out if you'd rather tag later.</p>
+          <p style="margin-top:0.5rem">The image is already saved under Images by now; this just opens it so you can name and tag it. Leave this step out if you'd rather tag later.</p>
         </div>
       </div>
 
@@ -438,7 +438,7 @@ Step 8: Open the URL "{{ local_ip }}/picture?edit=" followed by the value from s
       </div>
       <div class="step">
         <div class="step-num">3</div>
-        <div class="step-body"><strong>Safari opens on Tether</strong><p>A link opens ready to save: pick your tags, add a note if you want, and hit Save. A picture is already saved under Pictures; give it a name and tag if you like. One picture per share. Your phone must be on the same Wi-Fi network as the server.</p></div>
+        <div class="step-body"><strong>Safari opens on Tether</strong><p>A link opens ready to save: pick your tags, add a note if you want, and hit Save. An image is already saved under Images; give it a name and tag if you like. One image per share. Your phone must be on the same Wi-Fi network as the server.</p></div>
       </div>
     </div>
   </div>

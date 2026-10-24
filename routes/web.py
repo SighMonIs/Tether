@@ -161,20 +161,27 @@ async def tag_notes(request: Request, path: str):
     return _render_home(request, view)
 
 
-@router.get("/picture", response_class=HTMLResponse)
+# Pictures was renamed Images; old /picture URLs (and the iOS Shortcut's /picture?edit=) still land
+@router.get("/picture{rest:path}")
+async def old_picture_path(request: Request, rest: str):
+    query = request.url.query
+    return RedirectResponse(f"/image{rest}" + (f"?{query}" if query else ""))
+
+
+@router.get("/image", response_class=HTMLResponse)
 async def all_pictures(request: Request):
     view = _blank_view()
     view["type"] = "pictures"
     return _render_home(request, view)
 
 
-# /picture/<tag>[/<child-tag>]
-@router.get("/picture/{path:path}", response_class=HTMLResponse)
+# /image/<tag>[/<child-tag>]
+@router.get("/image/{path:path}", response_class=HTMLResponse)
 async def tag_pictures(request: Request, path: str):
     with db() as conn:
         found = _resolve_tag(conn, "pictures", path)
     if not found:
-        return RedirectResponse("/picture")
+        return RedirectResponse("/image")
     view = _blank_view()
     view["type"] = "pictures"
     view["tag"], view["uncategorised"] = found

@@ -313,10 +313,10 @@ function initSearch() {
           <span class="search-title">${escHtml(n.title || "Untitled")}</span>
           <span class="search-meta">${escHtml(n.tag_name || "Untagged")}</span>
         </a>`)) +
-      section("Pictures", pictures.map(p => `
+      section("Images", pictures.map(p => `
         <a class="search-row" href="/api/pictures/${p.id}/file" target="_blank" rel="noopener">
           <i data-lucide="image"></i>
-          <span class="search-title">${escHtml(p.title || "Picture")}</span>
+          <span class="search-title">${escHtml(p.title || "Image")}</span>
           <span class="search-meta">${escHtml(p.tag_name || "Untagged")}</span>
         </a>`)) +
       section("Projects", projects.map(p => `
@@ -1622,7 +1622,7 @@ function selectedItems() {
 }
 
 const plural = (n, word) => `${n} ${word}${n === 1 ? "" : "s"}`;
-const itemWord = () => ({ links: "link", notes: "note", pictures: "picture" })[ctKind()];
+const itemWord = () => ({ links: "link", notes: "note", pictures: "image" })[ctKind()];
 
 async function runBulkAction(action, ctId) {
   const links = selectedItems();
@@ -1781,8 +1781,8 @@ function renderCtPane(ctId) {
     ? (items.length ? `<div class="picture-grid">${items.map(pictureCardHtml).join("")}</div>` : "")
     : kind === "notes" ? nestNotes(items).map(noteCardHtml).join("")
     : items.map(l => linkCardHtml(l, true)).join("");
-  body = body || `<div class="empty-state">${n ? `No ${kind} match that filter.`
-    : kind === "pictures" ? "No pictures in here yet. Upload some, paste a screenshot, or drop files here."
+  body = body || `<div class="empty-state">${n ? `No ${kind === "pictures" ? "images" : kind} match that filter.`
+    : kind === "pictures" ? "No images in here yet. Upload some, paste a screenshot, or drop files here."
     : `No ${kind} in here yet.`}</div>`;
   if (n) body = `<div class="filter-summary">Showing ${items.length} of ${ctItems().length}</div>` + body;
 
@@ -1793,6 +1793,14 @@ function renderCtPane(ctId) {
   bindCtSelect(pane, ctId);
   pane.querySelector("#ct-edit-tag")?.addEventListener("click", () => openEditTag(tag.id, tag.name, tag.color));
   pane.querySelector("#ct-upload")?.addEventListener("click", pickPictures);
+  pane.querySelectorAll("[data-image]").forEach(a => a.addEventListener("click", ev => {
+    if (ev.metaKey || ev.ctrlKey || ev.shiftKey) return;   // let a new tab open the page
+    ev.preventDefault();
+    // while selecting, the whole image ticks its box instead of opening it
+    if (_selectMode) return a.closest(".picture-tile").querySelector(".link-check")?.click();
+    history.pushState({}, "", a.href);
+    renderImagePage(a.dataset.image);
+  }));
   lucide.createIcons();
 }
 
@@ -1816,6 +1824,7 @@ window.renderContentTypeView = renderContentTypeView;
 // Pictures with no tag picked shows every picture, like Links does.
 async function renderTagPage() {
   if (MODE === "projects") return renderProjectPage();
+  if (MODE === "pictures" && openImageId()) return renderImagePage(openImageId());
   const pane = document.getElementById("ct-pane");
   const tag = currentTagId();
   if (!pane || (tag === null && MODE !== "pictures")) return;
@@ -1823,10 +1832,10 @@ async function renderTagPage() {
   const qs = tag === null ? "" : tag === "" ? "uncategorised=true" : `tag=${tag}`;
   const res = await fetch(`/api/${MODE}?${qs}`, { headers: headers() });
   if (currentTagId() !== tag) return;            // moved on while this loaded
-  if (tag === null) setPageTitle("Pictures");
+  if (tag === null) setPageTitle("Images");
   _ctData = {
     content_type: { id: null, kind: MODE, tag_id: tag ? Number(tag) : null,
-                    title: tag === null ? "All pictures" : "Untagged" },
+                    title: tag === null ? "All images" : "Untagged" },
     links: [], notes: [], pictures: [],
     [MODE]: res.ok ? await res.json() : [],
   };
@@ -1906,7 +1915,7 @@ function pictureCardHtml(p) {
       ${_selectMode ? `<label class="link-pick picture-pick">
           <input type="checkbox" class="link-check" value="${p.id}" ${_selected.has(p.id) ? "checked" : ""}>
         </label>` : ""}
-      <a class="picture-img" href="${p.src}" target="_blank" rel="noopener">
+      <a class="picture-img" href="${location.pathname}?image=${p.id}" data-image="${p.id}">
         <img src="${p.src}" alt="${escHtml(p.title)}" loading="lazy">
       </a>
       <div class="picture-foot">
@@ -1938,7 +1947,7 @@ async function uploadPictures(files, pasted = false) {
   const imgs = [...files].filter(f => f.type.startsWith("image/"));
   if (!imgs.length) return;
   const tag = currentTagId();
-  if (imgs.length > 1) toast(`Uploading ${plural(imgs.length, "picture")}…`);
+  if (imgs.length > 1) toast(`Uploading ${plural(imgs.length, "image")}…`);
   let saved = 0;
   for (const f of imgs) {
     const form = new FormData();
@@ -1949,7 +1958,7 @@ async function uploadPictures(files, pasted = false) {
     if (res.ok) saved++;
     else toast((await res.json().catch(() => ({}))).detail || `Couldn't upload ${f.name}`, 4000);
   }
-  if (saved) toast(`Saved ${plural(saved, "picture")}`);
+  if (saved) toast(`Saved ${plural(saved, "image")}`);
   await loadSidebarCats();
   renderTagPage();
 }
@@ -1999,19 +2008,65 @@ async function savePicture(ev) {
       tag_id: Number(document.getElementById("picture-edit-tag").value) || 0,
     }),
   });
-  if (!res.ok) { toast("Couldn't save that picture"); return; }
+  if (!res.ok) { toast("Couldn't save that image"); return; }
   document.getElementById("picture-edit-modal").close();
-  toast("Picture updated");
+  toast("Image updated");
   renderTagPage();
 }
 
 async function deletePicture(id) {
-  if (!await showConfirm("Delete this picture? This can't be undone.")) return;
+  if (!await showConfirm("Delete this image? This can't be undone.")) return;
   await fetch(`/api/pictures/${id}`, { method: "DELETE", headers: headers() });
   document.getElementById("picture-edit-modal")?.close();
-  toast("Picture deleted");
+  toast("Image deleted");
+  if (openImageId() === id) history.replaceState({}, "", location.pathname);
   await loadSidebarCats();
   renderTagPage();
+}
+
+// ?image=<id> on an Images page shows that image in the pane, headed like a note:
+// the title edits in place, the pencil opens the rest (tag, delete)
+function openImageId() {
+  return new URLSearchParams(location.search).get("image");
+}
+
+async function renderImagePage(id) {
+  const pane = document.getElementById("ct-pane");
+  if (!pane) return;
+  // ponytail: fetches the whole list to find one; add GET /api/pictures/{id} if that gets slow
+  const res = await fetch("/api/pictures", { headers: headers() });
+  const p = (res.ok ? await res.json() : []).find(x => x.id === id);
+  if (!p) { history.replaceState({}, "", location.pathname); return renderTagPage(); }
+  setPageTitle(p.title);
+  pane.innerHTML = `
+    <div class="ct-head note-head">
+      <div class="ct-title">
+        <span class="note-title-grow" data-value="${escHtml(p.title)}">
+          <input type="text" size="1" class="note-title-input" id="image-title-input"
+                 value="${escHtml(p.title)}" placeholder="Image" autocomplete="off">
+        </span>
+        <button type="button" class="ct-edit" id="image-edit-btn" title="Edit image"><i data-lucide="pencil"></i></button>
+      </div>
+    </div>
+    <div class="note-created">${p.tag ? `${escHtml(p.tag.name)} · ` : ""}Added ${friendlyDate(p.created_at)}</div>
+    <a class="image-view" href="${p.src}" target="_blank" rel="noopener" title="Open full size">
+      <img src="${p.src}" alt="${escHtml(p.title)}">
+    </a>`;
+  const input = pane.querySelector("#image-title-input");
+  input.addEventListener("input", () => { input.parentElement.dataset.value = input.value || input.placeholder; });
+  input.addEventListener("keydown", ev => { if (ev.key === "Enter") input.blur(); });
+  input.addEventListener("change", async () => {
+    const r = await fetch(`/api/pictures/${id}`, {
+      method: "PATCH", headers: headers(), body: JSON.stringify({ title: input.value }),
+    });
+    if (!r.ok) { toast("Couldn't save that image"); return; }
+    const saved = await r.json();
+    input.value = saved.title;
+    input.parentElement.dataset.value = saved.title;
+    setPageTitle(saved.title);
+  });
+  pane.querySelector("#image-edit-btn").addEventListener("click", () => openEditPicture(id));
+  lucide.createIcons();
 }
 
 /* ── Projects ────────────────────────────────────────────── */
@@ -2035,7 +2090,7 @@ async function renderProjectPage() {
   if (!VIEW.project) {
     setPageTitle("Projects");
     pane.innerHTML = `<div class="empty-state">Pick a project, or use + to start one.
-      Then add links, notes and pictures to it from their ⋮ menu.</div>`;
+      Then add links, notes and images to it from their ⋮ menu.</div>`;
     return;
   }
   const res = await fetch(`/api/projects/${VIEW.project}`, { headers: headers() });
@@ -2075,7 +2130,7 @@ async function renderProjectPage() {
         ${remove("picture", pic.id)}
       </div>
     </article>`).join("")}</div>` : "";
-  const body = section("Links", links) + section("Notes", notes) + section("Pictures", pictures);
+  const body = section("Links", links) + section("Notes", notes) + section("Images", pictures);
 
   pane.innerHTML = `
     <div class="ct-head">
@@ -2084,7 +2139,7 @@ async function renderProjectPage() {
         <button type="button" class="ct-edit" id="project-edit" title="Edit project"><i data-lucide="pencil"></i></button>
       </div>
     </div>
-    ${body || `<div class="empty-state">Nothing in this project yet. Use “Add to project” from any link, note or picture's ⋮ menu.</div>`}`;
+    ${body || `<div class="empty-state">Nothing in this project yet. Use “Add to project” from any link, note or image's ⋮ menu.</div>`}`;
 
   pane.querySelector("#project-edit").addEventListener("click", () => openProjectModal(p));
   pane.querySelectorAll("[data-remove]").forEach(btn => btn.addEventListener("click", async () => {
@@ -2119,7 +2174,7 @@ async function saveProject(ev) {
 
 async function deleteProject() {
   const id = document.getElementById("project-id").value;
-  if (!await showConfirm("Delete this project? The links, notes and pictures in it are kept.")) return;
+  if (!await showConfirm("Delete this project? The links, notes and images in it are kept.")) return;
   await fetch(`/api/projects/${id}`, { method: "DELETE", headers: headers() });
   location.href = "/project";
 }

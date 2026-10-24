@@ -1052,7 +1052,7 @@ def _picture_dict(row) -> dict:
     d = dict(row)
     tag_name, tag_color = d.pop("tag_name"), d.pop("tag_color")
     d["tag"] = {"id": d["tag_id"], "name": tag_name, "color": tag_color} if d["tag_id"] else None
-    d["title"] = d["title"] or d["original_name"] or "Picture"
+    d["title"] = d["title"] or d["original_name"] or "Image"
     d["src"] = f"/api/pictures/{d['id']}/file"
     return d
 
@@ -1084,10 +1084,10 @@ async def upload_picture(
     _check_auth(x_tether_uuid)
     data = await file.read(MAX_PICTURE_BYTES + 1)
     if len(data) > MAX_PICTURE_BYTES:
-        raise HTTPException(status_code=413, detail="Picture is over 25 MB")
+        raise HTTPException(status_code=413, detail="Image is over 25 MB")
     kind = _sniff_image(data)
     if not kind:
-        raise HTTPException(status_code=415, detail="That file isn't a JPEG, PNG, GIF, WebP, AVIF or HEIC picture")
+        raise HTTPException(status_code=415, detail="That file isn't a JPEG, PNG, GIF, WebP, AVIF or HEIC image")
     mime, ext = kind
 
     pic_id = str(uuid.uuid4())

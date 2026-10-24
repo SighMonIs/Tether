@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap">
-  <link rel="stylesheet" href="/static/style.css?v=144">
+  <link rel="stylesheet" href="/static/style.css?v=148">
   <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
   <meta name="tether-uuid" content="{{ tether_uuid | default('') }}">
   <script>
@@ -84,7 +84,7 @@
     <a href="/note" class="rail-btn {% if mode == 'notes' %}active{% endif %}" data-mode="notes" title="Notes">
       <i data-lucide="file-text"></i>
     </a>
-    <a href="/picture" class="rail-btn {% if mode == 'pictures' %}active{% endif %}" data-mode="pictures" title="Pictures">
+    <a href="/image" class="rail-btn {% if mode == 'pictures' %}active{% endif %}" data-mode="pictures" title="Images">
       <i data-lucide="image"></i>
     </a>
     <a href="/project" class="rail-btn {% if mode == 'projects' %}active{% endif %}" data-mode="projects" title="Projects">
@@ -105,7 +105,7 @@
     {% set sides = {'notes': 'notes', 'editor': 'notes', 'pictures': 'pictures', 'projects': 'projects'} %}
     {% set mode = sides.get(view.type, 'links') if view else 'links' %}
     <div class="sidebar-head">
-      <span class="sidebar-head-title">{{ mode | capitalize }}</span>
+      <span class="sidebar-head-title">{{ 'Images' if mode == 'pictures' else mode | capitalize }}</span>
       <div class="row-menu-wrap">
         <button type="button" class="row-overflow sidebar-head-add" title="Add" onclick="toggleRowMenu(this)">
           <i data-lucide="plus"></i>
@@ -123,7 +123,7 @@
           {% if mode == 'projects' %}
           {% elif mode == 'pictures' %}
           <button type="button" class="row-menu-item" onclick="closeRowMenus(); pickPictures()">
-            <i data-lucide="image-plus"></i> Upload pictures
+            <i data-lucide="image-plus"></i> Upload images
           </button>
           {% elif mode == 'notes' %}
           <button type="button" class="row-menu-item" onclick="closeRowMenus(); window.createNoteInCategory?.()">
@@ -265,7 +265,7 @@
     </button>
   </div>
 
-  <script src="/static/app.js?v=128"></script>
+  <script src="/static/app.js?v=130"></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>
